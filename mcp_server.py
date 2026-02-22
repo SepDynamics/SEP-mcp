@@ -40,6 +40,7 @@ import os
 import re
 import sys
 import time
+import zstandard as zstd
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Annotated, Dict, List, Optional
@@ -90,10 +91,22 @@ def _get_valkey():
 # ---------------------------------------------------------------------------
 # Ingestion config
 # ---------------------------------------------------------------------------
-DOC_PREFIX = "manifold:docs:"
-SIG_PREFIX = "manifold:sig:"
+FILE_HASH_PREFIX = "manifold:file:"
 META_KEY = "manifold:meta:ingest"
 FILE_LIST_KEY = "manifold:file_list"
+
+# Zstandard compressor
+_zctx = zstd.ZstdCompressor(level=3)
+_zdctx = zstd.ZstdDecompressor()
+
+
+def _compress(text: str) -> bytes:
+    return _zctx.compress(text.encode("utf-8"))
+
+
+def _decompress(data: bytes) -> str:
+    return _zdctx.decompress(data).decode("utf-8")
+
 
 EXCLUDE_DIRS = {
     ".git",
@@ -336,6 +349,12 @@ def ingest_repo(
     compute_chaos: Annotated[
         bool, Field(description="Also compute chaos profiles for each file")
     ] = True,
+    lite: Annotated[
+        bool,
+        Field(
+            description="Skip full chaos entropy generation on tests, docs, and binaries"
+        ),
+    ] = False,
 ) -> str:
     """Full symbolic-dynamics ingest of the repository.
 
@@ -400,19 +419,19 @@ def ingest_repo(
 
         total_bytes += len(raw)
 
+        hash_key = f"{FILE_HASH_PREFIX}{rel}"
+        fields = {}
+
         if _is_text(path):
             text = raw.decode("utf-8", errors="replace")
-            pipe.set(f"{DOC_PREFIX}{rel}", text)
+            fields["doc"] = _compress(text)
             text_count += 1
         else:
             digest = hashlib.sha256(raw).hexdigest()
             if len(raw) <= 4096:
-                pipe.set(f"{DOC_PREFIX}{rel}", raw.hex())
+                fields["doc"] = raw.hex()
             else:
-                pipe.set(
-                    f"{DOC_PREFIX}{rel}",
-                    f"[BINARY sha256={digest} bytes={len(raw)}]",
-                )
+                fields["doc"] = f"[BINARY sha256={digest} bytes={len(raw)}]"
             binary_count += 1
 
         pipe.zadd(FILE_LIST_KEY, {rel: len(raw)})
@@ -421,17 +440,29 @@ def ingest_repo(
         if len(raw) >= 512:
             sig = _compute_sig(raw)
             if sig:
-                pipe.set(f"{SIG_PREFIX}{rel}", sig)
+                fields["sig"] = sig
                 sig_count += 1
 
         # Chaos profile (new expansion)
         if compute_chaos:
-            chaos = _compute_chaos_result(raw)
-            if chaos:
-                pipe.set(f"manifold:chaos:{rel}", json.dumps(chaos))
-                total_chaos += chaos["chaos_score"]
-                if chaos["collapse_risk"] == "HIGH":
-                    high_risk += 1
+            skip_chaos = False
+            if lite and (
+                "test" in rel.lower()
+                or path.suffix.lower() in {".md", ".txt", ".rst"}
+                or not _is_text(path)
+            ):
+                skip_chaos = True
+
+            if not skip_chaos:
+                chaos = _compute_chaos_result(raw)
+                if chaos:
+                    fields["chaos"] = _compress(json.dumps(chaos))
+                    total_chaos += chaos["chaos_score"]
+                    if chaos["collapse_risk"] == "HIGH":
+                        high_risk += 1
+
+        if fields:
+            pipe.hset(hash_key, mapping=fields)
 
         if (text_count + binary_count) % 200 == 0:
             pipe.execute()
@@ -517,11 +548,26 @@ def search_code(
 
     for key in v.r.scan_iter(f"{DOC_PREFIX}*", count=500):
         rel = key[len(DOC_PREFIX) :]
-        if file_pattern != "*" and not fnmatch(rel, file_pattern):
+        if not fnmatch(rel, file_pattern):
             continue
 
-        content = v.r.get(key)
-        if not content or content.startswith("[BINARY"):
+        raw = v.r.hget(key, "doc")
+        if not raw:
+            continue
+
+        try:
+            content = (
+                _decompress(raw.encode("latin1"))
+                if isinstance(raw, str)
+                else _decompress(raw)
+            )
+        except Exception:
+            # Fallback for uncompressed or binary strings
+            content = (
+                raw if isinstance(raw, str) else raw.decode("utf-8", errors="replace")
+            )
+
+        if content.startswith("[BINARY"):
             continue
 
         scanned += 1
@@ -577,15 +623,24 @@ def get_file(
     if not v.ping():
         return "❌ Valkey not reachable."
 
-    content = v.r.get(f"{DOC_PREFIX}{path}")
-    if content is None:
+    raw = v.r.hget(f"{FILE_HASH_PREFIX}{path}", "doc")
+    if raw is None:
         candidates = []
-        for key in v.r.scan_iter(f"{DOC_PREFIX}*{Path(path).name}*", count=200):
-            candidates.append(key[len(DOC_PREFIX) :])
+        for key in v.r.scan_iter(f"{FILE_HASH_PREFIX}*{Path(path).name}*", count=200):
+            candidates.append(key[len(FILE_HASH_PREFIX) :])
         if candidates:
             suggestion = "\n".join(f"  • {c}" for c in candidates[:10])
             return f"❌ '{path}' not found. Did you mean:\n{suggestion}"
         return f"❌ '{path}' not found in the index."
+
+    try:
+        content = (
+            _decompress(raw.encode("latin1"))
+            if isinstance(raw, str)
+            else _decompress(raw)
+        )
+    except Exception:
+        content = raw if isinstance(raw, str) else raw.decode("utf-8", errors="replace")
 
     lines = content.split("\n")
     numbered = "\n".join(f"{i+1:>5} | {line}" for i, line in enumerate(lines))
@@ -622,8 +677,8 @@ def list_indexed_files(
                 if len(paths) >= max_results:
                     break
     else:
-        for key in v.r.scan_iter(f"{DOC_PREFIX}*", count=500):
-            rel = key[len(DOC_PREFIX) :]
+        for key in v.r.scan_iter(f"{FILE_HASH_PREFIX}*", count=500):
+            rel = key[len(FILE_HASH_PREFIX) :]
             if pattern == "*" or fnmatch(rel, pattern):
                 paths.append(rel)
                 if len(paths) >= max_results:
@@ -652,12 +707,12 @@ def get_index_stats() -> str:
     doc_count = 0
     sig_count = 0
     chaos_count = 0
-    for key in v.r.scan_iter(f"{DOC_PREFIX}*", count=1000):
+    for key in v.r.scan_iter(f"{FILE_HASH_PREFIX}*", count=1000):
         doc_count += 1
-    for key in v.r.scan_iter(f"{SIG_PREFIX}*", count=1000):
-        sig_count += 1
-    for key in v.r.scan_iter("manifold:chaos:*", count=1000):
-        chaos_count += 1
+        if v.r.hexists(key, "sig"):
+            sig_count += 1
+        if v.r.hexists(key, "chaos"):
+            chaos_count += 1
 
     file_list_size = v.r.zcard(FILE_LIST_KEY) or 0
     db_size = v.r.dbsize()
@@ -802,19 +857,28 @@ def get_file_signature(
     if not v.ping():
         return "❌ Valkey not reachable."
 
-    sig = v.r.get(f"{SIG_PREFIX}{path}")
+    sig = v.r.hget(f"{FILE_HASH_PREFIX}{path}", "sig")
     if sig:
         return f"📐 {path} → signature: {sig}"
 
     # Try computing on the fly
-    content = v.r.get(f"{DOC_PREFIX}{path}")
-    if content is None:
+    raw = v.r.hget(f"{FILE_HASH_PREFIX}{path}", "doc")
+    if not raw:
         return f"❌ '{path}' not in index."
 
-    raw = content.encode("utf-8", errors="replace")
-    computed = _compute_sig(raw)
+    try:
+        content = (
+            _decompress(raw.encode("latin1"))
+            if isinstance(raw, str)
+            else _decompress(raw)
+        )
+    except Exception:
+        content = raw if isinstance(raw, str) else raw.decode("utf-8", errors="replace")
+
+    raw_bytes = content.encode("utf-8", errors="replace")
+    computed = _compute_sig(raw_bytes)
     if computed:
-        v.r.set(f"{SIG_PREFIX}{path}", computed)
+        v.r.hset(f"{FILE_HASH_PREFIX}{path}", "sig", computed)
         return f"📐 {path} → signature: {computed} (freshly computed)"
     return f"❌ File too short or encoder unavailable for signature computation."
 
@@ -848,9 +912,9 @@ def search_by_structure(
         return "❌ Valkey not reachable."
 
     matches = []
-    for key in v.r.scan_iter(f"{SIG_PREFIX}*", count=500):
-        rel = key[len(SIG_PREFIX) :]
-        sig_val = v.r.get(key)
+    for key in v.r.scan_iter(f"{FILE_HASH_PREFIX}*", count=500):
+        rel = key[len(FILE_HASH_PREFIX) :]
+        sig_val = v.r.hget(key, "sig")
         if not sig_val:
             continue
         sm = re.match(r"c([\d.]+)_s([\d.]+)_e([\d.]+)", sig_val)
@@ -930,24 +994,27 @@ def start_watcher(
                 if not raw:
                     return
                 vk = _get_valkey()
+                hash_key = f"{FILE_HASH_PREFIX}{rel}"
+                fields = {}
+
                 if _is_text(path):
                     text = raw.decode("utf-8", errors="replace")
-                    vk.r.set(f"{DOC_PREFIX}{rel}", text)
+                    fields["doc"] = _compress(text)
                 else:
                     digest = hashlib.sha256(raw).hexdigest()
-                    vk.r.set(
-                        f"{DOC_PREFIX}{rel}",
-                        f"[BINARY sha256={digest} bytes={len(raw)}]",
-                    )
+                    fields["doc"] = f"[BINARY sha256={digest} bytes={len(raw)}]"
+
                 vk.r.zadd(FILE_LIST_KEY, {rel: len(raw)})
                 if len(raw) >= 512:
                     sig = _compute_sig(raw)
                     if sig:
-                        vk.r.set(f"{SIG_PREFIX}{rel}", sig)
+                        fields["sig"] = sig
                     # Also compute chaos profile on save
                     chaos = _compute_chaos_result(raw)
                     if chaos:
-                        vk.r.set(f"manifold:chaos:{rel}", json.dumps(chaos))
+                        fields["chaos"] = _compress(json.dumps(chaos))
+
+                vk.r.hset(hash_key, mapping=fields)
             except Exception:
                 pass
 
@@ -967,9 +1034,8 @@ def start_watcher(
                 except ValueError:
                     return
                 vk = _get_valkey()
-                vk.r.delete(f"{DOC_PREFIX}{rel}")
-                vk.r.delete(f"{SIG_PREFIX}{rel}")
-                vk.r.delete(f"manifold:chaos:{rel}")
+                hash_key = f"{FILE_HASH_PREFIX}{rel}"
+                vk.r.delete(hash_key)
                 vk.r.zrem(FILE_LIST_KEY, rel)
 
     handler = _Handler()
@@ -1040,11 +1106,21 @@ def analyze_code_chaos(
     structural byte-stream analysis.
     """
     v = _get_valkey()
-    content = v.r.get(f"manifold:docs:{path}")
-    if not content:
+    raw = v.r.hget(f"{FILE_HASH_PREFIX}{path}", "doc")
+    if not raw:
         return "❌ File not indexed."
-    raw = content.encode("utf-8", errors="replace")
-    result = _compute_chaos_result(raw)
+
+    try:
+        content = (
+            _decompress(raw.encode("latin1"))
+            if isinstance(raw, str)
+            else _decompress(raw)
+        )
+    except Exception:
+        content = raw if isinstance(raw, str) else raw.decode("utf-8", errors="replace")
+
+    raw_bytes = content.encode("utf-8", errors="replace")
+    result = _compute_chaos_result(raw_bytes)
     if not result:
         return "❌ Could not compute chaos (file too short or kernel unavailable)."
 
@@ -1160,10 +1236,22 @@ def visualize_manifold_trajectory(
     import matplotlib.pyplot as plt
     import numpy as np
 
-    v = _get_valkey()
-    content = v.r.get(f"manifold:docs:{path}")
-    if not content:
+    content_str = v.r.hget(f"{FILE_HASH_PREFIX}{path}", "doc")
+    if not content_str:
         return f"❌ File '{path}' not indexed. Run ingest_repo first."
+
+    try:
+        content = (
+            _decompress(content_str.encode("latin1"))
+            if isinstance(content_str, str)
+            else _decompress(content_str)
+        )
+    except Exception:
+        content = (
+            content_str
+            if isinstance(content_str, str)
+            else content_str.decode("utf-8", errors="replace")
+        )
 
     # Encode the full file to get per-window metrics
     try:

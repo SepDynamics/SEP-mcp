@@ -26,3 +26,4 @@ gradio>=4.44.0
 lm-eval>=0.4.0
 
 mcp>=1.2.0
+zstandard>=0.22.0

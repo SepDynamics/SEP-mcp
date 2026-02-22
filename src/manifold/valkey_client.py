@@ -1,5 +1,7 @@
 import valkey
 import json
+import zstandard as zstd
+import base64
 from typing import Dict, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -35,24 +37,55 @@ class ValkeyWorkingMemory:
         self.invalidate_index()
 
     def get_all_documents(self) -> Dict[str, str]:
-        """Retrieve all ingested documents from Valkey."""
+        """Retrieve all ingested documents from Valkey.
+        Note: Now retrieves from the HGET hashes structure from mcp_server.py.
+        """
         docs = {}
-        for key in self.r.scan_iter(f"{self.doc_prefix}*"):
-            doc_id = key[len(self.doc_prefix) :]
-            docs[doc_id] = self.r.get(key)
+        file_hash_prefix = "manifold:file:"
+
+        for key in self.r.scan_iter(f"{file_hash_prefix}*"):
+            doc_id = key[len(file_hash_prefix) :]
+            raw = self.r.hget(key, "doc")
+            if not raw:
+                continue
+
+            # Assume it's compressed using the MCP server mechanism
+            try:
+                ctx = zstd.ZstdDecompressor()
+                content = ctx.decompress(raw.encode("latin1")).decode("utf-8")
+            except Exception:
+                content = raw
+
+            docs[doc_id] = content
         return docs
 
     def store_cached_index(self, index: "ManifoldIndex") -> None:
         """Cache the computed ManifoldIndex in Valkey for instant retrieval."""
-        self.r.set(self.index_key, json.dumps(index.to_dict()))
+        payload_str = json.dumps(index.to_dict())
+        payload_bytes = payload_str.encode("utf-8", errors="replace")
+
+        ctx = zstd.ZstdCompressor(level=3)
+        compressed = ctx.compress(payload_bytes)
+        b64_encoded = base64.b64encode(compressed).decode("ascii")
+
+        self.r.set(self.index_key, b64_encoded)
 
     def get_cached_index(self) -> Optional["ManifoldIndex"]:
         """Retrieve the cached ManifoldIndex from Valkey if it exists."""
-        data = self.r.get(self.index_key)
-        if not data:
+        b64_data = self.r.get(self.index_key)
+        if not b64_data:
             return None
 
-        parsed = json.loads(data)
+        # Decode base64 -> decompress zstd -> decode utf-8 -> parse json
+        try:
+            compressed = base64.b64decode(b64_data)
+            ctx = zstd.ZstdDecompressor()
+            json_str = ctx.decompress(compressed).decode("utf-8", errors="replace")
+            parsed = json.loads(json_str)
+        except Exception as e:
+            print(f"Failed to load cached index: {e}")
+            return None
+
         meta = parsed.get("meta", {})
         signatures = parsed.get("signatures", {})
         documents = parsed.get("documents", {})
