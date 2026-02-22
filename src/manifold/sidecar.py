@@ -289,20 +289,26 @@ def encode_text(
             original_bytes=0,
         )
 
-    cmd = [
-        str(Path(__file__).resolve().parent.parent.parent / "src/bin/byte_stream_manifold"),
-        "--fd", "0",
-        "--window-bytes", str(window_bytes),
-        "--step-bytes", str(stride_bytes),
-        "--signature-precision", str(precision)
-    ]
-    
-    result = subprocess.run(cmd, input=text_bytes, capture_output=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"byte_stream_manifold failed: {result.stderr.decode('utf-8', errors='replace')}")
-        
     try:
-        parsed = json.loads(result.stdout.decode("utf-8", errors="replace"))
+        try:
+            import manifold_engine
+        except ImportError:
+            # Fallback for when running in raw source checkout (where setup.py placed it in src/)
+            import sys
+
+            src_path = str(Path(__file__).resolve().parent.parent)
+            if src_path not in sys.path:
+                sys.path.insert(0, src_path)
+            import manifold_engine
+
+        json_str = manifold_engine.analyze_bytes(
+            text_bytes, window_bytes, stride_bytes, precision
+        )
+    except Exception as e:
+        raise RuntimeError(f"manifold_engine native execution failed: {e}")
+
+    try:
+        parsed = json.loads(json_str)
     except json.JSONDecodeError:
         parsed = {"windows": []}
 
@@ -623,9 +629,15 @@ def verify_snippet(
     )
     signatures = index.signatures if isinstance(index, ManifoldIndex) else index.get("signatures", {})  # type: ignore[arg-type]
 
-    window_bytes = window_bytes or int(meta.get("window_bytes", 512) if isinstance(meta, dict) else 512)
-    stride_bytes = stride_bytes or int(meta.get("stride_bytes", 384) if isinstance(meta, dict) else 384)
-    precision = precision or int(meta.get("precision", 3) if isinstance(meta, dict) else 3)
+    window_bytes = window_bytes or int(
+        meta.get("window_bytes", 512) if isinstance(meta, dict) else 512
+    )
+    stride_bytes = stride_bytes or int(
+        meta.get("stride_bytes", 384) if isinstance(meta, dict) else 384
+    )
+    precision = precision or int(
+        meta.get("precision", 3) if isinstance(meta, dict) else 3
+    )
     hazard_threshold = (
         hazard_threshold
         if hazard_threshold is not None
@@ -648,7 +660,9 @@ def verify_snippet(
     matches: List[Dict[str, object]] = []
 
     for window in windows:
-        entry = signatures.get(window.signature, {}) if isinstance(signatures, dict) else {}
+        entry = (
+            signatures.get(window.signature, {}) if isinstance(signatures, dict) else {}
+        )
         if not entry:
             continue
 
@@ -680,7 +694,10 @@ def verify_snippet(
     reconstruction = None
     if include_reconstruction:
         prototypes = {
-            sig: sig_entry.get("prototype", {}) if isinstance(sig_entry, dict) else {} for sig, sig_entry in (signatures.items() if isinstance(signatures, dict) else [])
+            sig: sig_entry.get("prototype", {}) if isinstance(sig_entry, dict) else {}
+            for sig, sig_entry in (
+                signatures.items() if isinstance(signatures, dict) else []
+            )
         }
         reconstruction = reconstruct_from_windows(encoded.windows, prototypes)
 

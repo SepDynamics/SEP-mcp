@@ -59,10 +59,6 @@ CHAOS_PROXY_DIR = REPO_ROOT / "3body-chaos-proxy"
 if CHAOS_PROXY_DIR.exists() and str(CHAOS_PROXY_DIR) not in sys.path:
     sys.path.insert(0, str(CHAOS_PROXY_DIR))
 
-# sep_text_manifold lives in the companion `score` repo
-_SCORE_SRC = Path("/workspace/sep/score/src")
-if _SCORE_SRC.exists() and str(_SCORE_SRC) not in sys.path:
-    sys.path.insert(0, str(_SCORE_SRC))
 
 # The C++ extension (sep_quantum) lives in src/
 _SRC_DIR = REPO_ROOT / "src"
@@ -249,17 +245,12 @@ _encoder_ready = None
 
 
 def _ensure_encoder():
-    """Lazy-import the structural encoder; return True if available."""
+    """Verify the local C++ byte_stream_manifold binary is available."""
     global _encoder_ready
     if _encoder_ready is not None:
         return _encoder_ready
-    try:
-        from sep_text_manifold import encode, native  # noqa: F401
-
-        native.set_use_native(True)
-        _encoder_ready = True
-    except Exception:
-        _encoder_ready = False
+    bin_path = Path(__file__).resolve().parent / "src/bin/byte_stream_manifold"
+    _encoder_ready = bin_path.exists()
     return _encoder_ready
 
 
@@ -269,15 +260,13 @@ def _compute_sig(data: bytes, precision: int = 3) -> Optional[str]:
         return None
     if len(data) < 512:
         return None
-    from sep_text_manifold import encode
+    from src.manifold.sidecar import encode_text
 
-    metrics = encode.encode_window(data[:512])
-    return encode.signature_from_metrics(
-        metrics["coherence"],
-        metrics["stability"],
-        metrics["entropy"],
-        precision=precision,
-    )
+    text = data.decode("utf-8", errors="replace")
+    res = encode_text(text, window_bytes=512, stride_bytes=384, precision=precision)
+    if not res.windows:
+        return None
+    return res.windows[0].signature
 
 
 # ---------------------------------------------------------------------------
@@ -714,7 +703,7 @@ def compute_signature(
     Coherence/Stability/Entropy/Hazard metrics for each window.
     """
     if not _ensure_encoder():
-        return "❌ Native encoder (sep_text_manifold) not available."
+        return "❌ Native encoder (src/bin/byte_stream_manifold) not available. Please compile src/"
 
     from src.manifold.sidecar import encode_text
 
