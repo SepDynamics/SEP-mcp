@@ -16,6 +16,10 @@ class ValkeyWorkingMemory:
 
     def __init__(self, host: str = "localhost", port: int = 6379, db: int = 0):
         self.r = valkey.Redis(host=host, port=port, db=db, decode_responses=True)
+        # Persistent raw byte connection to avoid N+1 initialization overhead
+        kwargs = self.r.connection_pool.connection_kwargs.copy()
+        kwargs["decode_responses"] = False
+        self.raw_r = valkey.Redis(**kwargs)
         self.doc_prefix = "manifold:docs:"
         self.index_key = "manifold:active_index"
 
@@ -43,18 +47,19 @@ class ValkeyWorkingMemory:
         docs = {}
         file_hash_prefix = "manifold:file:"
 
-        for key in self.r.scan_iter(f"{file_hash_prefix}*"):
-            doc_id = key[len(file_hash_prefix) :]
-            raw = self.r.hget(key, "doc")
+        for key in self.raw_r.scan_iter(f"{file_hash_prefix}*".encode("utf-8")):
+            key_str = key.decode("utf-8")
+            doc_id = key_str[len(file_hash_prefix) :]
+            raw = self.raw_r.hget(key, b"doc")
             if not raw:
                 continue
 
             # Assume it's compressed using the MCP server mechanism
             try:
                 ctx = zstd.ZstdDecompressor()
-                content = ctx.decompress(raw.encode("latin1")).decode("utf-8")
+                content = ctx.decompress(raw).decode("utf-8")
             except Exception:
-                content = raw
+                content = raw.decode("utf-8", errors="replace")
 
             docs[doc_id] = content
         return docs

@@ -100,12 +100,12 @@ _zctx = zstd.ZstdCompressor(level=3)
 _zdctx = zstd.ZstdDecompressor()
 
 
-def _compress(text: str) -> bytes:
-    return _zctx.compress(text.encode("utf-8"))
+def _compress(data: bytes) -> bytes:
+    return _zctx.compress(data)
 
 
-def _decompress(data: bytes) -> str:
-    return _zdctx.decompress(data).decode("utf-8")
+def _decompress(data: bytes) -> bytes:
+    return _zdctx.decompress(data)
 
 
 EXCLUDE_DIRS = {
@@ -402,9 +402,8 @@ def ingest_repo(
             continue
 
         try:
-            rel = str(path.relative_to(target))
-            if root_dir != ".":
-                rel = str(Path(root_dir) / rel)
+            # Strictly constrain ingestion paths to relative structure for absolute system path requests
+            rel = str(path.resolve().relative_to(WORKSPACE_ROOT))
         except ValueError:
             rel = str(path)
 
@@ -423,8 +422,7 @@ def ingest_repo(
         fields = {}
 
         if _is_text(path):
-            text = raw.decode("utf-8", errors="replace")
-            fields["doc"] = _compress(text)
+            fields["doc"] = _compress(raw)
             text_count += 1
         else:
             digest = hashlib.sha256(raw).hexdigest()
@@ -456,7 +454,7 @@ def ingest_repo(
             if not skip_chaos:
                 chaos = _compute_chaos_result(raw)
                 if chaos:
-                    fields["chaos"] = _compress(json.dumps(chaos))
+                    fields["chaos"] = _compress(json.dumps(chaos).encode("utf-8"))
                     total_chaos += chaos["chaos_score"]
                     if chaos["collapse_risk"] == "HIGH":
                         high_risk += 1
@@ -546,25 +544,24 @@ def search_code(
     results: List[str] = []
     scanned = 0
 
-    for key in v.r.scan_iter(f"{DOC_PREFIX}*", count=500):
-        rel = key[len(DOC_PREFIX) :]
+    for key in v.r.scan_iter(f"{FILE_HASH_PREFIX}*", count=500):
+        rel = key[len(FILE_HASH_PREFIX) :]
         if not fnmatch(rel, file_pattern):
             continue
 
-        raw = v.r.hget(key, "doc")
+        raw = v.raw_r.hget(key, "doc")
         if not raw:
             continue
 
         try:
-            content = (
-                _decompress(raw.encode("latin1"))
-                if isinstance(raw, str)
-                else _decompress(raw)
-            )
+            content_bytes = _decompress(raw)
+            content = content_bytes.decode("utf-8", errors="replace")
         except Exception:
             # Fallback for uncompressed or binary strings
             content = (
-                raw if isinstance(raw, str) else raw.decode("utf-8", errors="replace")
+                raw.decode("utf-8", errors="replace")
+                if isinstance(raw, bytes)
+                else str(raw)
             )
 
         if content.startswith("[BINARY"):
@@ -619,11 +616,12 @@ def get_file(
     Returns the full text content of the file as stored during ingest.
     Use list_indexed_files() first to discover available paths.
     """
+    path = path.replace(str(WORKSPACE_ROOT) + "/", "").lstrip("/")
     v = _get_valkey()
     if not v.ping():
         return "❌ Valkey not reachable."
 
-    raw = v.r.hget(f"{FILE_HASH_PREFIX}{path}", "doc")
+    raw = v.raw_r.hget(f"{FILE_HASH_PREFIX}{path}", "doc")
     if raw is None:
         candidates = []
         for key in v.r.scan_iter(f"{FILE_HASH_PREFIX}*{Path(path).name}*", count=200):
@@ -634,13 +632,14 @@ def get_file(
         return f"❌ '{path}' not found in the index."
 
     try:
-        content = (
-            _decompress(raw.encode("latin1"))
-            if isinstance(raw, str)
-            else _decompress(raw)
-        )
+        content_bytes = _decompress(raw)
+        content = content_bytes.decode("utf-8", errors="replace")
     except Exception:
-        content = raw if isinstance(raw, str) else raw.decode("utf-8", errors="replace")
+        content = (
+            raw.decode("utf-8", errors="replace")
+            if isinstance(raw, bytes)
+            else str(raw)
+        )
 
     lines = content.split("\n")
     numbered = "\n".join(f"{i+1:>5} | {line}" for i, line in enumerate(lines))
@@ -797,6 +796,12 @@ def verify_snippet(
     coverage_threshold: Annotated[
         float, Field(description="Minimum safe coverage ratio (0.0-1.0, default 0.5)")
     ] = 0.5,
+    scope: Annotated[
+        str,
+        Field(
+            description="Glob pattern to constrain the index validation (e.g. 'src/*')"
+        ),
+    ] = "*",
 ) -> str:
     """Verify a snippet against the codebase manifold index.
 
@@ -816,6 +821,20 @@ def verify_snippet(
         return "❌ No manifold index available. Run ingest_repo first."
 
     from src.manifold.sidecar import verify_snippet as _verify
+
+    docs = index.documents
+    if scope != "*":
+        filtered_docs = {}
+        for path, doc_content in docs.items():
+            if fnmatch(path, scope):
+                filtered_docs[path] = doc_content
+
+        if not filtered_docs:
+            return f"❌ FAILED: No indexed files found matching scope '{scope}'."
+
+        from src.manifold.sidecar import build_index
+
+        index = build_index(filtered_docs)
 
     result = _verify(
         text=snippet,
@@ -853,6 +872,7 @@ def get_file_signature(
 
     Returns the c/s/e signature string computed from the first 512 bytes.
     """
+    path = path.replace(str(WORKSPACE_ROOT) + "/", "").lstrip("/")
     v = _get_valkey()
     if not v.ping():
         return "❌ Valkey not reachable."
@@ -862,21 +882,16 @@ def get_file_signature(
         return f"📐 {path} → signature: {sig}"
 
     # Try computing on the fly
-    raw = v.r.hget(f"{FILE_HASH_PREFIX}{path}", "doc")
+    raw = v.raw_r.hget(f"{FILE_HASH_PREFIX}{path}", "doc")
     if not raw:
         return f"❌ '{path}' not in index."
 
     try:
-        content = (
-            _decompress(raw.encode("latin1"))
-            if isinstance(raw, str)
-            else _decompress(raw)
-        )
+        content_bytes = _decompress(raw)
     except Exception:
-        content = raw if isinstance(raw, str) else raw.decode("utf-8", errors="replace")
+        content_bytes = raw if isinstance(raw, bytes) else str(raw).encode("utf-8")
 
-    raw_bytes = content.encode("utf-8", errors="replace")
-    computed = _compute_sig(raw_bytes)
+    computed = _compute_sig(content_bytes)
     if computed:
         v.r.hset(f"{FILE_HASH_PREFIX}{path}", "sig", computed)
         return f"📐 {path} → signature: {computed} (freshly computed)"
@@ -897,6 +912,12 @@ def search_by_structure(
     max_results: Annotated[
         int, Field(description="Maximum number of similar files to return")
     ] = 20,
+    scope: Annotated[
+        str,
+        Field(
+            description="Glob pattern to limit the structural search (e.g. 'tests/*')"
+        ),
+    ] = "*",
 ) -> str:
     """Find files whose structural signature is close to the given one.
 
@@ -914,6 +935,9 @@ def search_by_structure(
     matches = []
     for key in v.r.scan_iter(f"{FILE_HASH_PREFIX}*", count=500):
         rel = key[len(FILE_HASH_PREFIX) :]
+        if scope != "*" and not fnmatch(rel, scope):
+            continue
+
         sig_val = v.r.hget(key, "sig")
         if not sig_val:
             continue
@@ -998,8 +1022,7 @@ def start_watcher(
                 fields = {}
 
                 if _is_text(path):
-                    text = raw.decode("utf-8", errors="replace")
-                    fields["doc"] = _compress(text)
+                    fields["doc"] = _compress(raw)
                 else:
                     digest = hashlib.sha256(raw).hexdigest()
                     fields["doc"] = f"[BINARY sha256={digest} bytes={len(raw)}]"
@@ -1012,7 +1035,7 @@ def start_watcher(
                     # Also compute chaos profile on save
                     chaos = _compute_chaos_result(raw)
                     if chaos:
-                        fields["chaos"] = _compress(json.dumps(chaos))
+                        fields["chaos"] = _compress(json.dumps(chaos).encode("utf-8"))
 
                 vk.r.hset(hash_key, mapping=fields)
             except Exception:
@@ -1105,19 +1128,21 @@ def analyze_code_chaos(
     Computes chaos score, entropy, coherence, and collapse risk from the
     structural byte-stream analysis.
     """
+    path = path.replace(str(WORKSPACE_ROOT) + "/", "").lstrip("/")
     v = _get_valkey()
-    raw = v.r.hget(f"{FILE_HASH_PREFIX}{path}", "doc")
+    raw = v.raw_r.hget(f"{FILE_HASH_PREFIX}{path}", "doc")
     if not raw:
         return "❌ File not indexed."
 
     try:
-        content = (
-            _decompress(raw.encode("latin1"))
-            if isinstance(raw, str)
-            else _decompress(raw)
-        )
+        content_bytes = _decompress(raw)
+        content = content_bytes.decode("utf-8", errors="replace")
     except Exception:
-        content = raw if isinstance(raw, str) else raw.decode("utf-8", errors="replace")
+        content = (
+            raw.decode("utf-8", errors="replace")
+            if isinstance(raw, bytes)
+            else str(raw)
+        )
 
     raw_bytes = content.encode("utf-8", errors="replace")
     result = _compute_chaos_result(raw_bytes)
@@ -1142,6 +1167,9 @@ def batch_chaos_scan(
     max_files: Annotated[
         int, Field(description="Maximum number of highest-risk files to return")
     ] = 50,
+    scope: Annotated[
+        str, Field(description="Glob pattern to limit the chaos scan (e.g. 'core/*')")
+    ] = "*",
 ) -> str:
     """Run the full GPU-style validation across the repo (like gpu_batch_validation.py).
 
@@ -1152,15 +1180,26 @@ def batch_chaos_scan(
         return "❌ Valkey not reachable."
 
     results = []
-    for key in v.r.scan_iter("manifold:chaos:*", count=500):
-        rel = key[len("manifold:chaos:") :]
+    for key in v.r.scan_iter(f"{FILE_HASH_PREFIX}*", count=500):
+        rel = key[len(FILE_HASH_PREFIX) :]
         if pattern != "*" and not fnmatch(rel, pattern):
             continue
+        if scope != "*" and not fnmatch(rel, scope):
+            continue
 
-        chaos_data = v.r.get(key)
+        chaos_data = v.raw_r.hget(key, "chaos")
         if chaos_data:
             try:
-                chaos = json.loads(chaos_data)
+                try:
+                    js_bytes = _decompress(chaos_data)
+                    js = js_bytes.decode("utf-8", errors="replace")
+                except Exception:
+                    js = (
+                        chaos_data.decode("utf-8", errors="replace")
+                        if isinstance(chaos_data, bytes)
+                        else str(chaos_data)
+                    )
+                chaos = json.loads(js)
                 results.append((chaos["chaos_score"], rel, chaos))
             except json.JSONDecodeError:
                 pass
@@ -1197,12 +1236,26 @@ def predict_structural_ejection(
 
     Uses the chaos score to estimate structural stability over time.
     """
+    path = path.replace(str(WORKSPACE_ROOT) + "/", "").lstrip("/")
     v = _get_valkey()
-    chaos_data = v.r.get(f"manifold:chaos:{path}")
+    chaos_data = v.raw_r.hget(f"{FILE_HASH_PREFIX}{path}", "chaos")
     if not chaos_data:
         return f"❌ No chaos profile for {path}. Run analyze_code_chaos first."
 
-    chaos = json.loads(chaos_data)
+    try:
+        try:
+            js_bytes = _decompress(chaos_data)
+            js = js_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            js = (
+                chaos_data.decode("utf-8", errors="replace")
+                if isinstance(chaos_data, bytes)
+                else str(chaos_data)
+            )
+        chaos = json.loads(js)
+    except Exception:
+        return f"❌ Failed to parse chaos profile for {path}."
+
     score = chaos["chaos_score"]
 
     if score >= 0.35:
@@ -1230,27 +1283,25 @@ def visualize_manifold_trajectory(
 
     Saves a PNG to reports/ and returns the metrics summary + file path.
     """
+    path = path.replace(str(WORKSPACE_ROOT) + "/", "").lstrip("/")
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import numpy as np
 
-    content_str = v.r.hget(f"{FILE_HASH_PREFIX}{path}", "doc")
-    if not content_str:
+    content_raw = v.raw_r.hget(f"{FILE_HASH_PREFIX}{path}", "doc")
+    if not content_raw:
         return f"❌ File '{path}' not indexed. Run ingest_repo first."
 
     try:
-        content = (
-            _decompress(content_str.encode("latin1"))
-            if isinstance(content_str, str)
-            else _decompress(content_str)
-        )
+        content_bytes = _decompress(content_raw)
+        content_final_str = content_bytes.decode("utf-8", errors="replace")
     except Exception:
-        content = (
-            content_str
-            if isinstance(content_str, str)
-            else content_str.decode("utf-8", errors="replace")
+        content_final_str = (
+            content_raw.decode("utf-8", errors="replace")
+            if isinstance(content_raw, bytes)
+            else str(content_raw)
         )
 
     # Encode the full file to get per-window metrics
@@ -1258,7 +1309,7 @@ def visualize_manifold_trajectory(
         from src.manifold.sidecar import encode_text
 
         encoded = encode_text(
-            content[:8192],  # cap at 8 KB for visualization
+            content_final_str[:8192],  # cap at 8 KB for visualization
             window_bytes=512,
             stride_bytes=384,
             precision=3,
