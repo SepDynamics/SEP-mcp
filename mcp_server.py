@@ -51,7 +51,7 @@ from pydantic import Field
 # Bootstrap – ensure local project modules are importable
 # ---------------------------------------------------------------------------
 REPO_ROOT = Path(__file__).resolve().parent
-WORKSPACE_ROOT = Path.cwd().resolve()
+WORKSPACE_ROOT = REPO_ROOT
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -153,76 +153,12 @@ EXCLUDE_PATTERNS = {
     "*.zip",
 }
 
-TEXT_EXTENSIONS = {
-    ".py",
-    ".md",
-    ".txt",
-    ".json",
-    ".toml",
-    ".yaml",
-    ".yml",
-    ".ini",
-    ".cfg",
-    ".rst",
-    ".c",
-    ".cpp",
-    ".h",
-    ".hpp",
-    ".cu",
-    ".sh",
-    ".bash",
-    ".zsh",
-    ".fish",
-    ".makefile",
-    ".cmake",
-    ".tex",
-    ".bib",
-    ".bst",
-    ".cls",
-    ".sty",
-    ".html",
-    ".css",
-    ".js",
-    ".ts",
-    ".jsx",
-    ".tsx",
-    ".xml",
-    ".csv",
-    ".tsv",
-    ".sql",
-    ".r",
-    ".R",
-    ".go",
-    ".rs",
-    ".java",
-    ".scala",
-    ".kt",
-    ".swift",
-    ".rb",
-    ".pl",
-    ".pm",
-    ".lua",
-    ".zig",
-    ".nim",
-    ".gitignore",
-    ".dockerignore",
-    ".editorconfig",
-    ".jsonl",
-    ".ndjson",
-    ".env",
-    ".cff",
-}
-
-TEXT_FILENAMES = {
-    "Makefile",
-    "Dockerfile",
-    "LICENSE",
-    "Procfile",
-    "Gemfile",
-    "Rakefile",
-    "Vagrantfile",
-    ".gitignore",
-    ".dockerignore",
+# Binary extensions that pass _should_skip but shouldn't be stored as text.
+# Everything else is treated as indexable text (manifold works on raw bytes).
+BINARY_EXTENSIONS = {
+    ".class", ".dll", ".exe", ".bin", ".dat", ".db", ".sqlite",
+    ".pkl", ".pickle", ".npy", ".npz", ".h5", ".hdf5",
+    ".wasm", ".dex", ".ttf", ".otf", ".woff", ".woff2", ".eot",
 }
 
 DEFAULT_MAX_BYTES = 512_000  # 512 KB per file cap
@@ -241,9 +177,8 @@ def _should_skip(path: Path) -> bool:
 
 
 def _is_text(path: Path) -> bool:
-    if path.name in TEXT_FILENAMES:
-        return True
-    return path.suffix.lower() in TEXT_EXTENSIONS
+    """Everything that passes _should_skip is text unless it's a known binary extension."""
+    return path.suffix.lower() not in BINARY_EXTENSIONS
 
 
 def _read_capped(path: Path, cap: int) -> bytes:
@@ -403,7 +338,7 @@ def ingest_repo(
 
         try:
             # Strictly constrain ingestion paths to relative structure for absolute system path requests
-            rel = str(path.resolve().relative_to(WORKSPACE_ROOT))
+            rel = os.path.relpath(path, WORKSPACE_ROOT)
         except ValueError:
             rel = str(path)
 
@@ -544,51 +479,67 @@ def search_code(
     results: List[str] = []
     scanned = 0
 
+    keys = []
+    rels = []
     for key in v.r.scan_iter(f"{FILE_HASH_PREFIX}*", count=500):
         rel = key[len(FILE_HASH_PREFIX) :]
         if not fnmatch(rel, file_pattern):
             continue
+        keys.append(key)
+        rels.append(rel)
 
-        raw = v.raw_r.hget(key, "doc")
-        if not raw:
-            continue
+    batch_size = 500
+    for i in range(0, len(keys), batch_size):
+        batch_keys = keys[i : i + batch_size]
+        batch_rels = rels[i : i + batch_size]
 
-        try:
-            content_bytes = _decompress(raw)
-            content = content_bytes.decode("utf-8", errors="replace")
-        except Exception:
-            # Fallback for uncompressed or binary strings
-            content = (
-                raw.decode("utf-8", errors="replace")
-                if isinstance(raw, bytes)
-                else str(raw)
+        pipe = v.raw_r.pipeline(transaction=False)
+        for key in batch_keys:
+            pipe.hget(key, "doc")
+        raw_docs = pipe.execute()
+
+        for rel, raw in zip(batch_rels, raw_docs):
+            if not raw:
+                continue
+
+            try:
+                content_bytes = _decompress(raw)
+                content = content_bytes.decode("utf-8", errors="replace")
+            except Exception:
+                # Fallback for uncompressed or binary strings
+                content = (
+                    raw.decode("utf-8", errors="replace")
+                    if isinstance(raw, bytes)
+                    else str(raw)
+                )
+
+            if content.startswith("[BINARY"):
+                continue
+
+            scanned += 1
+            matches = list(pattern.finditer(content))
+            if not matches:
+                continue
+
+            lines = content.split("\n")
+            snippets = []
+            seen_lines = set()
+            for m in matches[:5]:
+                line_start = content[: m.start()].count("\n")
+                ctx_start = max(0, line_start - 2)
+                ctx_end = min(len(lines), line_start + 3)
+                for i in range(ctx_start, ctx_end):
+                    if i not in seen_lines:
+                        seen_lines.add(i)
+                        prefix = ">>>" if i == line_start else "   "
+                        snippets.append(f"  {prefix} L{i+1}: {lines[i]}")
+
+            hit_text = "\n".join(snippets)
+            results.append(
+                f"📄 {rel}  ({len(matches)} match{'es' if len(matches)>1 else ''})\n{hit_text}"
             )
-
-        if content.startswith("[BINARY"):
-            continue
-
-        scanned += 1
-        matches = list(pattern.finditer(content))
-        if not matches:
-            continue
-
-        lines = content.split("\n")
-        snippets = []
-        seen_lines = set()
-        for m in matches[:5]:
-            line_start = content[: m.start()].count("\n")
-            ctx_start = max(0, line_start - 2)
-            ctx_end = min(len(lines), line_start + 3)
-            for i in range(ctx_start, ctx_end):
-                if i not in seen_lines:
-                    seen_lines.add(i)
-                    prefix = ">>>" if i == line_start else "   "
-                    snippets.append(f"  {prefix} L{i+1}: {lines[i]}")
-
-        hit_text = "\n".join(snippets)
-        results.append(
-            f"📄 {rel}  ({len(matches)} match{'es' if len(matches)>1 else ''})\n{hit_text}"
-        )
+            if len(results) >= max_results:
+                break
         if len(results) >= max_results:
             break
 
@@ -616,7 +567,7 @@ def get_file(
     Returns the full text content of the file as stored during ingest.
     Use list_indexed_files() first to discover available paths.
     """
-    path = path.replace(str(WORKSPACE_ROOT) + "/", "").lstrip("/")
+    path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
     v = _get_valkey()
     if not v.ping():
         return "❌ Valkey not reachable."
@@ -820,21 +771,32 @@ def verify_snippet(
     if index is None:
         return "❌ No manifold index available. Run ingest_repo first."
 
-    from src.manifold.sidecar import verify_snippet as _verify
+    from src.manifold.sidecar import verify_snippet as _verify, ManifoldIndex
 
-    docs = index.documents
     if scope != "*":
-        filtered_docs = {}
-        for path, doc_content in docs.items():
-            if fnmatch(path, scope):
-                filtered_docs[path] = doc_content
-
-        if not filtered_docs:
+        # Filter by subsetting signatures whose occurrences reference matching docs
+        matching_docs = {p for p in index.documents if fnmatch(p, scope)}
+        if not matching_docs:
             return f"❌ FAILED: No indexed files found matching scope '{scope}'."
 
-        from src.manifold.sidecar import build_index
+        filtered_sigs = {}
+        for sig, entry in index.signatures.items():
+            if not isinstance(entry, dict):
+                continue
+            occs = entry.get("occurrences", [])
+            filtered_occs = [
+                o for o in occs
+                if isinstance(o, dict) and o.get("doc_id") in matching_docs
+            ]
+            if filtered_occs:
+                filtered_sigs[sig] = {**entry, "occurrences": filtered_occs}
 
-        index = build_index(filtered_docs)
+        filtered_docs = {p: d for p, d in index.documents.items() if p in matching_docs}
+        index = ManifoldIndex(
+            meta=index.meta,
+            signatures=filtered_sigs,
+            documents=filtered_docs,
+        )
 
     result = _verify(
         text=snippet,
@@ -872,7 +834,7 @@ def get_file_signature(
 
     Returns the c/s/e signature string computed from the first 512 bytes.
     """
-    path = path.replace(str(WORKSPACE_ROOT) + "/", "").lstrip("/")
+    path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
     v = _get_valkey()
     if not v.ping():
         return "❌ Valkey not reachable."
@@ -1010,7 +972,7 @@ def start_watcher(
             if not path.is_file() or _should_skip(path):
                 return
             try:
-                rel = str(path.relative_to(WORKSPACE_ROOT))
+                rel = os.path.relpath(path, WORKSPACE_ROOT)
             except ValueError:
                 return
             try:
@@ -1053,7 +1015,7 @@ def start_watcher(
             if not event.is_directory:
                 path = Path(event.src_path)
                 try:
-                    rel = str(path.relative_to(WORKSPACE_ROOT))
+                    rel = os.path.relpath(path, WORKSPACE_ROOT)
                 except ValueError:
                     return
                 vk = _get_valkey()
@@ -1128,7 +1090,7 @@ def analyze_code_chaos(
     Computes chaos score, entropy, coherence, and collapse risk from the
     structural byte-stream analysis.
     """
-    path = path.replace(str(WORKSPACE_ROOT) + "/", "").lstrip("/")
+    path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
     v = _get_valkey()
     raw = v.raw_r.hget(f"{FILE_HASH_PREFIX}{path}", "doc")
     if not raw:
@@ -1180,29 +1142,43 @@ def batch_chaos_scan(
         return "❌ Valkey not reachable."
 
     results = []
+    keys = []
+    rels = []
     for key in v.r.scan_iter(f"{FILE_HASH_PREFIX}*", count=500):
         rel = key[len(FILE_HASH_PREFIX) :]
         if pattern != "*" and not fnmatch(rel, pattern):
             continue
         if scope != "*" and not fnmatch(rel, scope):
             continue
+        keys.append(key)
+        rels.append(rel)
 
-        chaos_data = v.raw_r.hget(key, "chaos")
-        if chaos_data:
-            try:
+    batch_size = 500
+    for i in range(0, len(keys), batch_size):
+        batch_keys = keys[i : i + batch_size]
+        batch_rels = rels[i : i + batch_size]
+
+        pipe = v.raw_r.pipeline(transaction=False)
+        for key in batch_keys:
+            pipe.hget(key, "chaos")
+        chaos_docs = pipe.execute()
+
+        for rel, chaos_data in zip(batch_rels, chaos_docs):
+            if chaos_data:
                 try:
-                    js_bytes = _decompress(chaos_data)
-                    js = js_bytes.decode("utf-8", errors="replace")
-                except Exception:
-                    js = (
-                        chaos_data.decode("utf-8", errors="replace")
-                        if isinstance(chaos_data, bytes)
-                        else str(chaos_data)
-                    )
-                chaos = json.loads(js)
-                results.append((chaos["chaos_score"], rel, chaos))
-            except json.JSONDecodeError:
-                pass
+                    try:
+                        js_bytes = _decompress(chaos_data)
+                        js = js_bytes.decode("utf-8", errors="replace")
+                    except Exception:
+                        js = (
+                            chaos_data.decode("utf-8", errors="replace")
+                            if isinstance(chaos_data, bytes)
+                            else str(chaos_data)
+                        )
+                    chaos = json.loads(js)
+                    results.append((chaos["chaos_score"], rel, chaos))
+                except json.JSONDecodeError:
+                    pass
 
     results.sort(reverse=True)
     results = results[:max_files]
@@ -1236,7 +1212,7 @@ def predict_structural_ejection(
 
     Uses the chaos score to estimate structural stability over time.
     """
-    path = path.replace(str(WORKSPACE_ROOT) + "/", "").lstrip("/")
+    path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
     v = _get_valkey()
     chaos_data = v.raw_r.hget(f"{FILE_HASH_PREFIX}{path}", "chaos")
     if not chaos_data:
@@ -1283,7 +1259,12 @@ def visualize_manifold_trajectory(
 
     Saves a PNG to reports/ and returns the metrics summary + file path.
     """
-    path = path.replace(str(WORKSPACE_ROOT) + "/", "").lstrip("/")
+    path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
+
+    v = _get_valkey()
+    if not v.ping():
+        return "❌ Valkey not reachable."
+
     import matplotlib
 
     matplotlib.use("Agg")

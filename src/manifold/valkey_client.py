@@ -47,21 +47,36 @@ class ValkeyWorkingMemory:
         docs = {}
         file_hash_prefix = "manifold:file:"
 
+        keys = []
+        doc_ids = []
         for key in self.raw_r.scan_iter(f"{file_hash_prefix}*".encode("utf-8")):
             key_str = key.decode("utf-8")
             doc_id = key_str[len(file_hash_prefix) :]
-            raw = self.raw_r.hget(key, b"doc")
-            if not raw:
-                continue
+            keys.append(key)
+            doc_ids.append(doc_id)
 
-            # Assume it's compressed using the MCP server mechanism
-            try:
-                ctx = zstd.ZstdDecompressor()
-                content = ctx.decompress(raw).decode("utf-8")
-            except Exception:
-                content = raw.decode("utf-8", errors="replace")
+        batch_size = 500
+        for i in range(0, len(keys), batch_size):
+            batch_keys = keys[i : i + batch_size]
+            batch_doc_ids = doc_ids[i : i + batch_size]
 
-            docs[doc_id] = content
+            pipe = self.raw_r.pipeline(transaction=False)
+            for key in batch_keys:
+                pipe.hget(key, b"doc")
+            raw_docs = pipe.execute()
+
+            for doc_id, raw in zip(batch_doc_ids, raw_docs):
+                if not raw:
+                    continue
+
+                # Assume it's compressed using the MCP server mechanism
+                try:
+                    ctx = zstd.ZstdDecompressor()
+                    content = ctx.decompress(raw).decode("utf-8")
+                except Exception:
+                    content = raw.decode("utf-8", errors="replace")
+
+                docs[doc_id] = content
         return docs
 
     def store_cached_index(self, index: "ManifoldIndex") -> None:
