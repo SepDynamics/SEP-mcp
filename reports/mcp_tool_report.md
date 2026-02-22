@@ -1,6 +1,6 @@
 # SEP MCP Server – Tool Validation Report
 
-**Generated:** 2026-02-22 02:19:12 UTC  
+**Generated:** 2026-02-22 22:24:15 UTC  
 **Total Tools:** 16  
 **Passed:** 16  
 **Failed:** 0  
@@ -10,28 +10,28 @@
 
 | # | Tool | Status | Time (ms) | Assertions |
 |---|------|--------|-----------|------------|
-| 1 | `ingest_repo` | ✅ PASS | 3686.0 | 6/6 |
-| 2 | `get_index_stats` | ✅ PASS | 1.9 | 6/6 |
-| 3 | `list_indexed_files` | ✅ PASS | 0.6 | 4/4 |
-| 4 | `search_code` | ✅ PASS | 8.1 | 5/5 |
-| 5 | `get_file` | ✅ PASS | 0.2 | 6/6 |
+| 1 | `ingest_repo` | ✅ PASS | 143355.0 | 6/6 |
+| 2 | `get_index_stats` | ✅ PASS | 284.7 | 6/6 |
+| 3 | `list_indexed_files` | ✅ PASS | 5.7 | 4/4 |
+| 4 | `search_code` | ✅ PASS | 355.6 | 5/5 |
+| 5 | `get_file` | ✅ PASS | 0.4 | 6/6 |
 | 6 | `get_file_signature` | ✅ PASS | 0.1 | 5/5 |
 | 7 | `compute_signature` | ✅ PASS | 0.6 | 7/7 |
-| 8 | `verify_snippet` | ✅ PASS | 7192.5 | 6/6 |
-| 9 | `search_by_structure` | ✅ PASS | 5.8 | 5/5 |
-| 10 | `inject_fact` | ✅ PASS | 0.6 | 5/5 |
-| 11 | `remove_fact` | ✅ PASS | 0.1 | 3/3 |
-| 12 | `start_watcher_and_cli_updates` | ✅ PASS | 338.3 | 3/3 |
-| 13 | `analyze_code_chaos` | ✅ PASS | 2.6 | 8/8 |
-| 14 | `batch_chaos_scan` | ✅ PASS | 4.1 | 6/6 |
-| 15 | `predict_structural_ejection` | ✅ PASS | 0.1 | 5/5 |
-| 16 | `visualize_manifold_trajectory` | ✅ PASS | 954.6 | 12/12 |
+| 8 | `verify_snippet` | ✅ PASS | 125721.3 | 6/6 |
+| 9 | `search_by_structure` | ✅ PASS | 2.7 | 5/5 |
+| 10 | `inject_fact` | ✅ PASS | 1.6 | 5/5 |
+| 11 | `remove_fact` | ✅ PASS | 0.3 | 3/3 |
+| 12 | `start_watcher_and_cli_updates` | ✅ PASS | 377.1 | 3/3 |
+| 13 | `analyze_code_chaos` | ✅ PASS | 2.7 | 8/8 |
+| 14 | `batch_chaos_scan` | ✅ PASS | 30.9 | 6/6 |
+| 15 | `predict_structural_ejection` | ✅ PASS | 0.2 | 5/5 |
+| 16 | `visualize_manifold_trajectory` | ✅ PASS | 845.6 | 12/12 |
 
 ## Detailed Results
 
 ### 1. `ingest_repo` — ✅ PASS
 
-**Execution time:** 3686.0ms
+**Execution time:** 143355.0ms
 
 **Assertions:**
 
@@ -45,22 +45,22 @@
 **Response:**
 
 ```
-✅ Ingest complete in 3.7s
-  Text files : 48
-  Binary files: 4
-  Total bytes : 2,989,237
-  Signatures : 44
-  Skipped    : 4
+✅ Ingest complete in 143.2s
+  Text files : 5479
+  Binary files: 2
+  Total bytes : 108,247,815
+  Signatures : 4568
+  Skipped    : 100
   Errors     : 0
-  Avg chaos  : 0.406
-  High-risk  : 44
+  Avg chaos  : 0.402
+  High-risk  : 4555
 ```
 
 ---
 
 ### 2. `get_index_stats` — ✅ PASS
 
-**Execution time:** 1.9ms
+**Execution time:** 284.7ms
 
 **Assertions:**
 
@@ -75,20 +75,20 @@
 
 ```
 📊 Codebase Index Stats
-  Total Valkey keys  : 1905
-  Indexed documents  : 339
-  File list entries  : 339
-  Structural sigs   : 268
-  Chaos profiles    : 268
-  Valkey memory      : 3.26G
-  Last ingest        : 2026-02-22T02:19:00Z
+  Total Valkey keys  : 5483
+  Indexed documents  : 5481
+  File list entries  : 5481
+  Structural sigs   : 4568
+  Chaos profiles    : 4568
+  Valkey memory      : 33.14M
+  Last ingest        : 2026-02-22T22:22:02Z
   Last ingest root   : /sep/structural-manifold-compression/SEP-mcp
-  Last text files    : 48
-  Last binary files  : 4
-  Last total bytes   : 2,989,237
-  Last elapsed       : 3.66s
-  Avg chaos score    : 0.406
-  High-risk files    : 44
+  Last text files    : 5479
+  Last binary files  : 2
+  Last total bytes   : 108,247,815
+  Last elapsed       : 143.15s
+  Avg chaos score    : 0.402
+  High-risk files    : 4555
   Encoder available  : True
 ```
 
@@ -96,7 +96,7 @@
 
 ### 3. `list_indexed_files` — ✅ PASS
 
-**Execution time:** 0.6ms
+**Execution time:** 5.7ms
 
 **Assertions:**
 
@@ -109,33 +109,33 @@
 
 ```
 Indexed files (20):
-3body-chaos-proxy/setup.py
-SEP-mcp/scripts/__init__.py
-SEP-mcp/src/manifold/__init__.py
-SEP-mcp/src/manifold/encoder.py
-SEP-mcp/src/manifold/verifier.py
-SEP-mcp/tests/conftest.py
-manim/__init__.py
-manim/scenes/__init__.py
-scripts/__init__.py
-scripts/experiments/build_causal_domain.py
-scripts/rag/synthesize_thalamic.py
-scripts/rag/test_programmer.py
-scripts/utils/setup_quantum.py
-setup.py
-src/manifold/__init__.py
-src/manifold/encoder.py
-src/manifold/verifier.py
-tests/test_compression.py
-tests/test_prepare_corpus.py
-verify_workspace.py
+cpython/Lib/test/relimport.py
+cpython/Lib/test/test_import/data/circular_imports/basic2.py
+cpython/Lib/test/test_import/data/circular_imports/subpkg/util.py
+cpython/Lib/test/test_import/data/circular_imports/util.py
+cpython/Lib/test/test_import/data/lazy_imports/basic2.py
+cpython/Lib/test/test_import/data/lazy_imports/lazy_try_except_from_star.py
+cpython/Lib/test/test_import/data/lazy_imports/pkg/__init__.py
+cpython/Lib/test/test_importlib/namespace_pkgs/module_and_namespace_package/a_test.py
+cpython/Lib/test/test_importlib/namespace_pkgs/not_a_namespace_pkg/foo/one.py
+cpython/Lib/test/test_importlib/namespace_pkgs/portion1/foo/one.py
+cpython/Lib/test/test_importlib/namespace_pkgs/portion2/foo/two.py
+cpython/Lib/test/test_importlib/namespace_pkgs/project1/parent/child/one.py
+cpython/Lib/test/test_importlib/namespace_pkgs/project2/parent/child/two.py
+cpython/Lib/test/tokenizedata/bad_coding.py
+cpython/Lib/test/tokenizedata/badsyntax_pep3120.py
+cpython/Lib/test/tokenizedata/coding20731.py
+cpython/Lib/test/typinganndata/partialexecution/__init__.py
+cpython/Tools/c-analyzer/c_common/__init__.py
+cpython/Tools/freeze/hello.py
+cpython/Tools/freeze/test/ok.py
 ```
 
 ---
 
 ### 4. `search_code` — ✅ PASS
 
-**Execution time:** 8.1ms
+**Execution time:** 355.6ms
 
 **Assertions:**
 
@@ -148,7 +148,41 @@ verify_workspace.py
 **Response:**
 
 ```
-Found 5 file(s) matching 'chaos_score' (scanned 67):
+Found 3 file(s) matching 'chaos_score' (scanned 2271):
+
+📄 mcp_server.py  (5 matches)
+      L258: 
+      L259:     return {
+  >>> L260:         "chaos_score": avg_fp,
+      L261:         "entropy": avg_entropy,
+      L262:         "coherence": avg_coherence,
+      L392:                 if chaos:
+      L393:                     fields["chaos"] = _compress(json.dumps(chaos).encode("utf-8"))
+  >>> L394:                     total_chaos += chaos["chaos_score"]
+      L395:                     if chaos["collapse_risk"] == "HIGH":
+      L396:                         high_risk += 1
+      L1123: 
+      L1124:     return f"""📈 Chaos Analysis for {path}
+  >>> L1125: Chaos Score (fluctuation_persistence) : {result['chaos_score']:.3f}
+      L1126: Entropy                               : {result['entropy']:.3f}
+      L1127: Coherence                             : {result['coherence']:.3f}
+      L1187:                         )
+      L1188:                     chaos = json.loads(js)
+  >>> L1189:                     results.append((chaos["chaos_score"], rel, chaos))
+      L1190:                 except json.JSONDecodeError:
+      L1191:                     pass
+      L1243:         return f"✖ Failed to parse chaos profile for {path}."
+      L1244: 
+  >>> L1245:     score = chaos["chaos_score"]
+      L1246: 
+      L1247:     if score >= 0.35:
+
+📄 scripts/tests/test_mcp_tools.py  (1 match)
+      L180:         "search_code",
+      L181:         srv.search_code,
+  >>> L182:         query="chaos_score",
+      L183:         file_pattern="*.py",
+      L184:         max_results=5,
 
 📄 scripts/rag/pair_programmer_agent.py  (2 matches)
       L65:             
@@ -156,40 +190,7 @@ Found 5 file(s) matching 'chaos_score' (scanned 67):
   >>> L67:                 print(f"⚠️ WARNING: {filepath.name} is in PERSISTENT_HIGH state (score: {chaos['chaos_score']:.3f}).")
       L68:                 print(f"Impending structural ejection detected!")
       L69:             elif chaos:
-  >>> L70:                 print(f"✅ {filepath.name} chaos score: {chaos['chaos_score']:.3f} ({chaos['collapse_risk']})")
-      L71: 
-      L72:             verified, response, coverage, _ = self.router.process_query(
-
-📄 3body-chaos-proxy/gpu_batch_validation.py  (6 matches)
-      L238:     print("Running C++ Symbolic Chaos Kernel over batch...")
-      L239:     # Pre-allocate
-  >>> L240:     chaos_score_all = np.zeros_like(K_all_cpu)
-      L241:     window_size = 200
-      L242: 
-      L260:         results = chaos_proxy.analyze_window_batch(windows_to_process)
-      L261:         for i, res in enumerate(results):
-  >>> L262:             chaos_score_all[i, b] = res.fluctuation_persistence
-      L263: 
-      L264:     print(f"C++ mapping took {time.time() - t_compile_start:.2f} sec")
-      L270:     mis = []
-      L271:     survival_times = []
-  >>> L272:     mean_chaos_scores = []
-      L273: 
-      L274:     for b in valid_batch_indices:
-      L290: 
-      L291:         l_valid = l_smoothed[start_idx:][final_mask]
-  >>> L292:         c_valid = chaos_score_all[start_idx:, b][final_mask]
-      L293: 
-      L294:         if len(l_valid) < 50 or np.var(l_valid) < 1e-10 or np.var(c_valid) < 1e-10:
-      L314:             survival_step = num_steps
-      L315:         survival_times.append(survival_step * DT)
-  >>> L316:         mean_chaos_scores.append(float(np.mean(c_valid)))
-      L317: 
-      L318:     print("\n--- Massive GPU Validation Summary ---")
-
-📄 3body-chaos-proxy/three_body_demo.py  (10 matches)
-      L123: 
-      L124: prin
+  >>> L70:                 prin
 ... (truncated)
 ```
 
@@ -197,7 +198,7 @@ Found 5 file(s) matching 'chaos_score' (scanned 67):
 
 ### 5. `get_file` — ✅ PASS
 
-**Execution time:** 0.2ms
+**Execution time:** 0.4ms
 
 **Assertions:**
 
@@ -296,7 +297,7 @@ Found 5 file(s) matching 'chaos_score' (scanned 67):
 
 ### 8. `verify_snippet` — ✅ PASS
 
-**Execution time:** 7192.5ms
+**Execution time:** 125721.3ms
 
 **Assertions:**
 
@@ -314,14 +315,14 @@ Status: ✅ VERIFIED
   Safe coverage   : 100.00%
   Raw match ratio : 100.00%
   Gated hits      : 1/1
-  Matched docs    : SEP-mcp/src/manifold/encoder.py, mcp_server.py, src/manifold/encoder.py, tests/trading/test_gate_evaluation.py
+  Matched docs    : cpython/Doc/_static/tachyon-example-heatmap.html, cpython/Doc/howto/curses.rst, cpython/Doc/howto/functional.rst, cpython/Doc/library/functions.rst, cpython/Doc/library/multiprocessing.rst, cpython/Doc/library/ssl.rst, cpython/Doc/library/sys.rst, cpython/Doc/library/typing.rst, cpython/Doc/using/cmdline.rst, cpython/Doc/using/windows.rst, cpython/Doc/whatsnew/2.3.rst, cpython/Doc/whatsnew/3.10.rst, cpython/Lib/_pyrepl/_module_completer.py, cpython/Lib/asyncio/unix_events.py, cpython/Lib/idlelib/format.py, cpython/Lib/inspect.py, cpython/Lib/posixpath.py, cpython/Lib/profiling/sampling/heatmap_collector.py, cpython/Lib/test/pythoninfo.py, cpython/Lib/test/test_ast/test_ast.py, cpython/Lib/test/test_logging.py, cpython/Lib/test/test_long.py, cpython/Lib/test/test_profiling/test_sampling_profiler/test_async.py, cpython/Lib/turtledemo/__main__.py, cpython/Lib/typing.py, cpython/Misc/NEWS.d/3.10.0a1.rst, cpython/Misc/mypy/_pyrepl/_module_completer.py, cpython/Modules/_testcapi/pyatomic.c, cpython/Modules/cjkcodecs/mappings_jp.h, cpython/Modules/clinic/_testclinic.c.h, cpython/Objects/bytesobject.c, cpython/Python/flowgraph.c, cpython/Python/thread_pthread_stubs.h, cpython/Tools/gdb/libpython.py, cpython/Tools/i18n/pygettext.py, cpython/Tools/jit/_optimizers.py, src/manifold/encoder.py, wikitext-103/wiki.valid.tokens
 ```
 
 ---
 
 ### 9. `search_by_structure` — ✅ PASS
 
-**Execution time:** 5.8ms
+**Execution time:** 2.7ms
 
 **Assertions:**
 
@@ -335,18 +336,18 @@ Status: ✅ VERIFIED
 
 ```
 Files structurally similar to c0.213_s0.000_e0.928 (±0.05):
-  c0.213_s0.000_e0.928  Δ=0.0000  mcp_server.py
-  c0.212_s0.000_e0.928  Δ=0.0010  scripts/rag/bulk_valkey_ingest.py
-  c0.212_s0.000_e0.928  Δ=0.0010  scripts/rag/pair_programmer_agent.py
-  c0.211_s0.000_e0.930  Δ=0.0020  scripts/rag/system_sensor.py
-  c0.214_s0.000_e0.930  Δ=0.0020  scripts/rag/verify_snippet.py
+  c0.212_s0.000_e0.927  Δ=0.0010  cpython/Tools/peg_generator/pegen/__main__.py
+  c0.221_s0.000_e0.932  Δ=0.0080  cpython/PCbuild/_overlapped.vcxproj.filters
+  c0.224_s0.000_e0.918  Δ=0.0110  cpython/Include/internal/pycore_instruction_sequence.h
+  c0.214_s0.000_e0.916  Δ=0.0120  cpython/Modules/_tracemalloc.c
+  c0.225_s0.000_e0.926  Δ=0.0120  cpython/PCbuild/pyexpat.vcxproj.filters
 ```
 
 ---
 
 ### 10. `inject_fact` — ✅ PASS
 
-**Execution time:** 0.6ms
+**Execution time:** 1.6ms
 
 **Assertions:**
 
@@ -359,14 +360,14 @@ Files structurally similar to c0.213_s0.000_e0.928 (±0.05):
 **Response:**
 
 ```
-🚀 Fact '__test_fact_1771726736' injected into the Dynamic Semantic Codebook.
+🚀 Fact '__test_fact_1771798779' injected into the Dynamic Semantic Codebook.
 ```
 
 ---
 
 ### 11. `remove_fact` — ✅ PASS
 
-**Execution time:** 0.1ms
+**Execution time:** 0.3ms
 
 **Assertions:**
 
@@ -377,14 +378,14 @@ Files structurally similar to c0.213_s0.000_e0.928 (±0.05):
 **Response:**
 
 ```
-🗑️ Fact '__test_fact_1771726736' removed from the Dynamic Semantic Codebook.
+🗑️ Fact '__test_fact_1771798779' removed from the Dynamic Semantic Codebook.
 ```
 
 ---
 
 ### 12. `start_watcher_and_cli_updates` — ✅ PASS
 
-**Execution time:** 338.3ms
+**Execution time:** 377.1ms
 
 **Assertions:**
 
@@ -402,7 +403,7 @@ Files structurally similar to c0.213_s0.000_e0.928 (±0.05):
 
 ### 13. `analyze_code_chaos` — ✅ PASS
 
-**Execution time:** 2.6ms
+**Execution time:** 2.7ms
 
 **Assertions:**
 
@@ -420,8 +421,8 @@ Files structurally similar to c0.213_s0.000_e0.928 (±0.05):
 ```
 📈 Chaos Analysis for mcp_server.py
 Chaos Score (fluctuation_persistence) : 0.399
-Entropy                               : 0.902
-Coherence                             : 0.356
+Entropy                               : 0.903
+Coherence                             : 0.360
 Collapse Risk                         : HIGH
 Windows analyzed                      : 10
 
@@ -431,7 +432,7 @@ Windows analyzed                      : 10
 
 ### 14. `batch_chaos_scan` — ✅ PASS
 
-**Execution time:** 4.1ms
+**Execution time:** 30.9ms
 
 **Assertions:**
 
@@ -447,18 +448,18 @@ Windows analyzed                      : 10
 ```
 🔍 Batch Chaos Scan (Top 5 highest risk files matching *.py):
 
-  [HIGH] 0.427 | setup.py
-  [HIGH] 0.425 | scripts/experiments/eval_math_dataset.py
-  [HIGH] 0.424 | scripts/rag/synthesize_thalamic.py
-  [HIGH] 0.422 | scripts/rag/bulk_valkey_ingest.py
-  [HIGH] 0.422 | SEP-mcp/scripts/rag/bulk_valkey_ingest.py
+  [HIGH] 0.439 | cpython/Lib/test/mp_preload_sysargv.py
+  [HIGH] 0.439 | cpython/Lib/test/test_dataclasses/dataclass_module_1.py
+  [HIGH] 0.438 | cpython/Lib/test/_test_monitoring_shutdown.py
+  [HIGH] 0.438 | cpython/Lib/test/test_dataclasses/dataclass_module_2.py
+  [HIGH] 0.438 | cpython/Lib/test/test_codecmaps_tw.py
 ```
 
 ---
 
 ### 15. `predict_structural_ejection` — ✅ PASS
 
-**Execution time:** 0.1ms
+**Execution time:** 0.2ms
 
 **Assertions:**
 
@@ -479,7 +480,7 @@ Predicted structural ejection in ~10 days without refactoring.
 
 ### 16. `visualize_manifold_trajectory` — ✅ PASS
 
-**Execution time:** 954.6ms
+**Execution time:** 845.6ms
 
 **Assertions:**
 
@@ -503,10 +504,10 @@ Predicted structural ejection in ~10 days without refactoring.
 
   File                : mcp_server.py
   Windows analyzed    : 21
-  Avg Chaos Score     : 0.391
+  Avg Chaos Score     : 0.399
   Max Chaos Score     : 0.437
-  Avg Entropy         : 0.901
-  Avg Coherence       : 0.394
+  Avg Entropy         : 0.908
+  Avg Coherence       : 0.365
   Collapse Risk       : HIGH
 
   Symbolic States:

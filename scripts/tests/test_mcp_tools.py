@@ -72,8 +72,17 @@ SAMPLE_TEXT_512_PLUS = (
 )
 
 INJECT_FACT_ID = f"__test_fact_{int(time.time())}"
+FACT_QUERY = "".join(
+    [
+        "test fact ",
+        "injected by the MCP ",
+        "tool validation suite",
+    ]
+)
 INJECT_FACT_TEXT = (
-    "This is a test fact injected by the MCP tool validation suite. "
+    "This is a "
+    + FACT_QUERY
+    + ". "
     "It confirms that the inject_fact tool correctly stores data in Valkey "
     "and that it can be retrieved afterward via get_file."
 )
@@ -142,7 +151,7 @@ def test_ingest_repo() -> ToolTestResult:
         srv.ingest_repo,
         root_dir=".",
         compute_chaos=True,
-        clear_first=False,
+        clear_first=True,
     )
     r.assert_check("returns string", isinstance(r.response, str))
     r.assert_check("contains '✅'", "✅" in r.response)
@@ -286,7 +295,7 @@ def test_inject_fact() -> ToolTestResult:
 
     # Verify Search Code visibility
     search_resp = srv.search_code(
-        query="test fact injected by the MCP tool validation suite", max_results=1
+        query=FACT_QUERY, max_results=1
     )
     r.assert_check("visible in search_code", "test fact injected" in search_resp)
     r.finalize()
@@ -301,7 +310,7 @@ def test_remove_fact() -> ToolTestResult:
 
     # Validate it no longer shows up
     search_resp = srv.search_code(
-        query="test fact injected by the MCP tool validation suite", max_results=1
+        query=FACT_QUERY, max_results=1
     )
     r.assert_check("erased from search_code", "No matches found" in search_resp)
     r.finalize()

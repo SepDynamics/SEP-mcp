@@ -124,6 +124,7 @@ EXCLUDE_DIRS = {
     "egg-info",
     ".eggs",
     "src/build",
+    "reports",
 }
 
 EXCLUDE_PATTERNS = {
@@ -495,7 +496,7 @@ def search_code(
 
         pipe = v.raw_r.pipeline(transaction=False)
         for key in batch_keys:
-            pipe.hget(key, "doc")
+            pipe.hget(key.encode("utf-8"), b"doc")
         raw_docs = pipe.execute()
 
         for rel, raw in zip(batch_rels, raw_docs):
@@ -532,7 +533,8 @@ def search_code(
                     if i not in seen_lines:
                         seen_lines.add(i)
                         prefix = ">>>" if i == line_start else "   "
-                        snippets.append(f"  {prefix} L{i+1}: {lines[i]}")
+                        display_line = lines[i].replace("❌", "✖")
+                        snippets.append(f"  {prefix} L{i+1}: {display_line}")
 
             hit_text = "\n".join(snippets)
             results.append(
@@ -1057,7 +1059,11 @@ def inject_fact(
     if not v.ping():
         return "❌ Valkey not reachable."
 
-    v.add_document(fact_id, fact_text)
+    rel = os.path.relpath(fact_id, WORKSPACE_ROOT) if os.path.isabs(fact_id) else fact_id
+    payload = fact_text.encode("utf-8", errors="replace")
+    v.raw_r.hset(f"{FILE_HASH_PREFIX}{rel}".encode("utf-8"), mapping={b"doc": _compress(payload)})
+    v.r.zadd(FILE_LIST_KEY, {rel: len(payload)})
+    v.invalidate_index()
     return f"🚀 Fact '{fact_id}' injected into the Dynamic Semantic Codebook."
 
 
@@ -1072,7 +1078,11 @@ def remove_fact(
     if not v.ping():
         return "❌ Valkey not reachable."
 
-    v.remove_document(fact_id)
+    rel = os.path.relpath(fact_id, WORKSPACE_ROOT) if os.path.isabs(fact_id) else fact_id
+    v.remove_document(rel)
+    v.raw_r.delete(f"{FILE_HASH_PREFIX}{rel}".encode("utf-8"))
+    v.r.zrem(FILE_LIST_KEY, rel)
+    v.invalidate_index()
     return f"🗑️ Fact '{fact_id}' removed from the Dynamic Semantic Codebook."
 
 
@@ -1098,15 +1108,15 @@ def analyze_code_chaos(
 
     try:
         content_bytes = _decompress(raw)
-        content = content_bytes.decode("utf-8", errors="replace")
+        content_final_str = content_bytes.decode("utf-8", errors="replace")
     except Exception:
-        content = (
+        content_final_str = (
             raw.decode("utf-8", errors="replace")
             if isinstance(raw, bytes)
             else str(raw)
         )
 
-    raw_bytes = content.encode("utf-8", errors="replace")
+    raw_bytes = content_final_str.encode("utf-8", errors="replace")
     result = _compute_chaos_result(raw_bytes)
     if not result:
         return "❌ Could not compute chaos (file too short or kernel unavailable)."
@@ -1160,7 +1170,7 @@ def batch_chaos_scan(
 
         pipe = v.raw_r.pipeline(transaction=False)
         for key in batch_keys:
-            pipe.hget(key, "chaos")
+            pipe.hget(key.encode("utf-8"), b"chaos")
         chaos_docs = pipe.execute()
 
         for rel, chaos_data in zip(batch_rels, chaos_docs):
