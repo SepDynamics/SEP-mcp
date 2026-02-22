@@ -29,6 +29,11 @@ class ValkeyWorkingMemory:
         self.r.set(f"{self.doc_prefix}{doc_id}", text)
         self.invalidate_index()
 
+    def remove_document(self, doc_id: str) -> None:
+        """Remove a stored document from Valkey."""
+        self.r.delete(f"{self.doc_prefix}{doc_id}")
+        self.invalidate_index()
+
     def get_all_documents(self) -> Dict[str, str]:
         """Retrieve all ingested documents from Valkey."""
         docs = {}

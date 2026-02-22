@@ -1,262 +1,85 @@
-# Structural Manifold Compression MCP Server
+# Manifold Engine MCP Server
 
-**A Model Context Protocol (MCP) server that exposes the chaos-detection neural primitives from the 3-body gravitational ejection predictor (MNRAS preprint Feb 2026) for real-time codebase structural analysis.**
-
----
-
-## Overview
-
-This MCP server implements the exact symbolic-dynamics pipeline used to predict gravitational ejection in the 3-body problem, now adapted for detecting architectural collapse in software codebases with sub-millisecond latency.
-
-The server provides a complete suite of tools for:
-- **Structural analysis** of code through byte-stream manifold signatures
-- **Chaos detection** using the same fluctuation persistence metrics that predict orbital instability
-- **Real-time monitoring** of codebase health and maintainability
-- **Zero-shot learning** through fact injection into working memory
-
-## Core Signal Pipeline
-
-The server implements a 6-stage signal-first pipeline identical to the chaos proxy:
-
-1. **Rolling variance** of byte-stream "kinetic energy"
-2. **Log scaling** + Delta-Sigma 1-bit quantization
-3. **Symbolic state machine** (LOW_FLUCTUATION / OSCILLATION / PERSISTENT_HIGH)
-4. **fluctuation_persistence** = chaos score (PERSISTENT_HIGH fraction)
-5. **Entropy + coherence** as secondary metrics
-6. **Hazard gating** (collapse detection) on every retrieval
+Welcome to the Manifold Engine Model Context Protocol (MCP) server. This server provides AI coding assistants with high-speed, structural codebase analysis and dynamic context management.
 
 ---
 
-## Installation
+## What it Does
 
-### Prerequisites
+Traditional AI tools read codebases token-by-token, which is computationally expensive and hits context limits quickly. The Manifold Engine takes a radically different approach: it maps codebases *structurally*. 
 
-- Python 3.10+
-- Valkey (or Redis) server running on `localhost:6379`
-- C++ structural entropy engine (compiled from `src/`)
+By scanning files as continuous byte-streams and calculating "structural signatures," it tracks the underlying architecture of a repository. It can tell when a file's structure becomes chaotic, disjointed, or prone to breaking down—treating your codebase like a dynamic physical system.
 
-### Setup
+With an embedded Valkey memory grid, it watches your workspace in real time. It automatically maintains an associative index of the entire codebase footprint, enabling instant code retrieval, zero-shot memory injection, and structural clones without needing to constantly re-read files.
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/SepDynamics/structural-manifold-compression.git
-   cd structural-manifold-compression
-   ```
+## What Makes it Unique
 
-2. **Install dependencies**
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
+- **O(1) Structural Search**: Instead of relying on slow semantic token matching, it queries continuous structural manifold coordinates. This means you can find overlapping context blocks and similar code patterns instantaneously, no matter the repository's size.
+- **Chaos Pathology Detection**: The engine calculates a `chaos_score` for every source file. It measures architectural tension to quantify how unmaintainable or "volatile" a file is, mathematically predicting which segments of your project are most likely to cause bugs or require refactoring. 
+- **Dynamic Semantic Codebook (Working Memory)**: You can permanently inject project rules, architecture guidelines, or specific contextual facts into its high-speed memory footprint. This provides true zero-shot learning—the AI won't forget the context because it's actively tracked in the codebase proxy proxy layer.
+- **Sub-millisecond Filesystem Synchronization**: An embedded file watcher continuously monitors your workspace. When you save, edit, or delete a file, the engine re-calculates signatures and updates its search indexes in milliseconds.
 
-3. **Build the C++ engine** (optional, pre-built binary included)
-   ```bash
-   cd src
-   cmake -B build
-   cmake --build build
-   ```
+## How it Benefits Your Workflow
 
-4. **Start Valkey/Redis**
+Integrating this MCP server supercharges AI agent capabilities:
+
+1. **Unlimited Context Expansion**: By utilizing the valkey grid cells, AI assistants sidestep standard context window degradation. They can map out millions of lines of code natively.
+2. **Proactive Maintenance Reconnaissance**: Instead of waiting to encounter bad code, you can ask the AI to run a `batch_chaos_scan` immediately upon opening a project. It will pinpoint the most fragile, high-maintenance risk files instantly.
+3. **Persistent Architectural Rules**: Tell the engine your custom framework rules once using `inject_fact()`. Every subsequent retrieval ensures the AI adheres strictly to those project-specific architectures without repeatedly stuffing the prompt.
+4. **Predictive Refactoring**: The `predict_structural_ejection` tool forecasts exact maintenance windows, warning developers when a file's complexity curve will force an inevitable rewrite before disaster strikes.
+
+---
+
+## How to Use It
+
+### Installation & Setup
+
+1. **Prerequisites**
+   - Python 3.10+
+   - Valkey (or Redis) server running locally on `localhost:6379`
+   - C++ structural engine module (built from `src/`)
+
+2. **Run the Valkey Backend**
    ```bash
    valkey-server
-   # Or: redis-server
    ```
 
-5. **Configure MCP in your IDE**
-   
-   Add to your MCP settings (e.g., Claude Desktop, Cursor, or other MCP-compatible editors):
-   
+3. **Configure the MCP Client**
+   Add the following to your MCP-compatible IDE settings (such as Claude Desktop or Cursor):
    ```json
    {
      "mcpServers": {
-       "manifold": {
-         "command": "python",
-         "args": ["mcp_server.py"],
-         "cwd": "/path/to/structural-manifold-compression"
+       "manifold-engine": {
+         "command": "path/to/virtualenv/bin/python",
+         "args": ["path/to/structural-manifold-compression/SEP-mcp/mcp_server.py"]
        }
      }
    }
    ```
+   *Note: The engine natively anchors its analysis limits to the workspace directory from which the IDE runs it, guaranteeing full-project coverage.*
 
----
+### Core MCP Tools Available
 
-## MCP Tools
+The server provides 16 robust tools explicitly built for codebase navigation and pathology:
 
-The server exposes 14 tools through the Model Context Protocol:
+#### Workspace Indexing & Watching
+- **`ingest_repo`**: Initializes the codebase index (text + structural metrics).
+- **`start_watcher`**: Spins up a seamless background observer to track file writes/deletes.
+- **`get_index_stats`**: Returns real-time intelligence on tracked files, signatures, and risk totals.
 
-### Repository Management
-- **`ingest_repo`** - Full symbolic-dynamics ingest of repository into Valkey
-- **`get_index_stats`** - Statistics about the indexed codebase
-- **`start_watcher`** - Live filesystem watcher for auto-ingestion on save
+#### Spatial Searching
+- **`search_code`**: Instantaneous keyword/Regex scanning globally across the indexed footprint. 
+- **`search_by_structure`**: Locates files with identical mathematical architectures/signatures.
+- **`list_indexed_files` / `get_file`**: General file exploration boundaries.
 
-### Code Search & Retrieval
-- **`search_code`** - Keyword/regex search across indexed files
-- **`get_file`** - Read a specific indexed file
-- **`list_indexed_files`** - List all indexed files with glob filtering
+#### Codebase Pathology (Chaos Analysis)
+- **`batch_chaos_scan`**: Execute repository-wide scans exposing the highest-risk, most unmaintainable files.
+- **`analyze_code_chaos`**: Deep-dive architectural breakdown of an exact file (entropy, coherence, risk).
+- **`predict_structural_ejection`**: Receive an estimated timeline of when a file will become completely unmaintainable.
+- **`visualize_manifold_trajectory`**: Generates rich 4-panel telemetry PNG dashboards mapping codebase decay vectors.
+- **`compute_signature` / `get_file_signature`**: Raw calculation algorithms for structural mapping.
 
-### Structural Analysis
-- **`compute_signature`** - Compress text into manifold signatures
-- **`get_file_signature`** - Get structural signature for a file
-- **`search_by_structure`** - Find structurally similar files
-- **`verify_snippet`** - Verify code snippet against codebase patterns
-
-### Chaos Detection
-- **`analyze_code_chaos`** - Full ChaosResult per file (identical to three_body_demo.py)
-- **`batch_chaos_scan`** - GPU-style batch validation across repository
-- **`predict_structural_ejection`** - Forecast when a file will become unmaintainable
-- **`visualize_manifold_trajectory`** - Generate 4-panel chaos dashboard
-
-### Zero-Shot Learning
-- **`inject_fact`** - Inject new facts into working memory codebook
-
----
-
-## Quick Start Example
-
-Once configured in your MCP-compatible IDE:
-
-```
-# Index your codebase
-> ingest_repo(root_dir=".", compute_chaos=True)
-
-# Analyze a specific file for chaos
-> analyze_code_chaos(path="src/manifold/sidecar.py")
-
-# Find high-risk files
-> batch_chaos_scan(pattern="*.py", max_files=50)
-
-# Visualize the structural trajectory
-> visualize_manifold_trajectory(path="mcp_server.py")
-```
-
----
-
-## Architecture
-
-### Components
-
-- **[`mcp_server.py`](mcp_server.py)** - Main MCP server with 14 exposed tools
-- **`src/manifold/`** - Python modules for encoding, verification, and Valkey integration
-  - [`sidecar.py`](src/manifold/sidecar.py) - Core encoding and chaos analysis
-  - [`valkey_client.py`](src/manifold/valkey_client.py) - Working memory interface
-  - [`encoder.py`](src/manifold/encoder.py) - Signature computation
-  - [`router.py`](src/manifold/router.py) - Spatial routing logic
-  - [`verifier.py`](src/manifold/verifier.py) - Snippet verification
-- **`src/core/`** - C++ structural entropy engine
-  - [`structural_entropy.cpp`](src/core/structural_entropy.cpp) - Core physics calculations
-  - [`byte_stream_manifold.cpp`](src/core/byte_stream_manifold.cpp) - Byte stream processing
-- **`scripts/rag/`** - Supporting RAG utilities and examples
-- **`scripts/tests/`** - MCP tool tests
-
-### Dependencies
-
-Core dependencies (see [`requirements.txt`](requirements.txt)):
-- `mcp[server]` - Model Context Protocol server framework
-- `valkey` / `redis` - Working memory backend
-- `pydantic` - Data validation
-- `watchdog` - Filesystem monitoring (optional)
-
----
-
-## Testing
-
-Run the MCP tool test suite:
-
-```bash
-python scripts/tests/test_mcp_tools.py
-```
-
-Test zero-shot fact injection:
-
-```bash
-python scripts/tests/test_zero_shot_injection.py
-```
-
----
-
-## Use Cases
-
-### For AI Assistants
-- Real-time detection of code that violates established patterns
-- Structural similarity search for finding related code
-- Chaos-based file ranking for maintenance prioritization
-- Verification of AI-generated code against codebase norms
-
-### For Development Teams
-- Continuous monitoring of codebase health metrics
-- Early warning system for files approaching unmaintainability
-- Structural refactoring guidance through similarity analysis
-- Automated architectural alignment checks
-
-### For Research
-- Applying gravitational chaos theory to software engineering
-- Studying code evolution through structural manifold trajectories
-- Zero-shot learning experiments in working memory
-
----
-
-## Project Structure
-
-```
-.
-├── mcp_server.py              # Main MCP server (14 tools)
-├── src/
-│   ├── manifold/              # Python modules
-│   │   ├── sidecar.py        # Core encoding & chaos
-│   │   ├── valkey_client.py  # Working memory
-│   │   ├── encoder.py        # Signature computation
-│   │   ├── router.py         # Spatial routing
-│   │   └── verifier.py       # Verification
-│   ├── core/                  # C++ engine
-│   │   ├── structural_entropy.cpp
-│   │   └── byte_stream_manifold.cpp
-│   └── bin/                   # Compiled binaries
-├── scripts/
-│   ├── rag/                   # RAG utilities
-│   └── tests/                 # Test scripts
-├── tests/                     # Unit tests
-├── reports/                   # Generated analysis reports
-└── README.md                  # This file
-```
-
----
-
-## Scientific Background
-
-This MCP server is based on research that applies the same mathematical framework used to predict chaotic orbital ejection in 3-body gravitational systems to software architecture analysis.
-
-**Key insight**: Just as fluctuation persistence in orbital kinetic energy predicts ejection events, fluctuation persistence in code byte-stream entropy predicts maintainability collapse.
-
-For the full mathematical treatment and validation on gravitational systems, see the MNRAS preprint (Feb 2026).
-
----
-
-## License & Citation
-
-This project is released under the [MIT License](LICENSE).
-
-```bibtex
-@misc{nagy2026manifold,
-  author       = {Alexander Nagy},
-  title        = {Structural Manifold Compression MCP Server},
-  year         = {2026},
-  howpublished = {\url{https://github.com/SepDynamics/structural-manifold-compression}}
-}
-```
-
----
-
-## Related Tools
-
-- **Valkey Working Memory**: [`scripts/rag/bulk_valkey_ingest.py`](scripts/rag/bulk_valkey_ingest.py) - Standalone indexing
-- **Pair Programmer Agent**: [`scripts/rag/pair_programmer_agent.py`](scripts/rag/pair_programmer_agent.py) - Autonomous watcher demo
-- **RAG CLI**: [`scripts/rag/tripartite_cli.py`](scripts/rag/tripartite_cli.py) - Command-line interface
-
----
-
-## Support
-
-For issues, questions, or contributions, please open an issue on GitHub.
-
-**Repository**: https://github.com/SepDynamics/structural-manifold-compression
+#### Agentic Working Memory
+- **`inject_fact`**: Force rule-sets or architectural realities permanently into the context codebook.
+- **`remove_fact`**: Clean up localized memory traces.
+- **`verify_snippet`**: Cross-validate new blocks of AI-generated code against established codebase paradigms.

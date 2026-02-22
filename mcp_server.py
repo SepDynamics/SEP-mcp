@@ -50,6 +50,7 @@ from pydantic import Field
 # Bootstrap – ensure local project modules are importable
 # ---------------------------------------------------------------------------
 REPO_ROOT = Path(__file__).resolve().parent
+WORKSPACE_ROOT = Path.cwd().resolve()
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -85,6 +86,7 @@ def _get_valkey():
     global _valkey_wm
     if _valkey_wm is None:
         from src.manifold.valkey_client import ValkeyWorkingMemory
+
         _valkey_wm = ValkeyWorkingMemory()
     return _valkey_wm
 
@@ -98,35 +100,120 @@ META_KEY = "manifold:meta:ingest"
 FILE_LIST_KEY = "manifold:file_list"
 
 EXCLUDE_DIRS = {
-    ".git", "__pycache__", ".venv", ".venv-py313-bak", ".venv_mamba",
-    "node_modules", "output", "build", ".mypy_cache", ".pytest_cache",
-    ".tox", "dist", "egg-info", ".eggs", "src/build",
+    ".git",
+    "__pycache__",
+    ".venv",
+    ".venv-py313-bak",
+    ".venv_mamba",
+    "node_modules",
+    "output",
+    "build",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".tox",
+    "dist",
+    "egg-info",
+    ".eggs",
+    "src/build",
 }
 
 EXCLUDE_PATTERNS = {
-    "*.pyc", "*.pyo", "*.so", "*.o", "*.a", "*.dylib",
-    "*.egg-info", ".DS_Store", "*.mp4", "*.webm",
-    "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.ico",
-    "*.wav", "*.mp3", "*.arrow", "*.safetensors",
-    "*.pdf", "*.whl", "*.tar.gz", "*.zip",
+    "*.pyc",
+    "*.pyo",
+    "*.so",
+    "*.o",
+    "*.a",
+    "*.dylib",
+    "*.egg-info",
+    ".DS_Store",
+    "*.mp4",
+    "*.webm",
+    "*.png",
+    "*.jpg",
+    "*.jpeg",
+    "*.gif",
+    "*.bmp",
+    "*.ico",
+    "*.wav",
+    "*.mp3",
+    "*.arrow",
+    "*.safetensors",
+    "*.pdf",
+    "*.whl",
+    "*.tar.gz",
+    "*.zip",
 }
 
 TEXT_EXTENSIONS = {
-    ".py", ".md", ".txt", ".json", ".toml", ".yaml", ".yml",
-    ".ini", ".cfg", ".rst", ".c", ".cpp", ".h", ".hpp", ".cu",
-    ".sh", ".bash", ".zsh", ".fish", ".makefile", ".cmake",
-    ".tex", ".bib", ".bst", ".cls", ".sty",
-    ".html", ".css", ".js", ".ts", ".jsx", ".tsx",
-    ".xml", ".csv", ".tsv", ".sql", ".r", ".R",
-    ".go", ".rs", ".java", ".scala", ".kt", ".swift",
-    ".rb", ".pl", ".pm", ".lua", ".zig", ".nim",
-    ".gitignore", ".dockerignore", ".editorconfig",
-    ".jsonl", ".ndjson", ".env", ".cff",
+    ".py",
+    ".md",
+    ".txt",
+    ".json",
+    ".toml",
+    ".yaml",
+    ".yml",
+    ".ini",
+    ".cfg",
+    ".rst",
+    ".c",
+    ".cpp",
+    ".h",
+    ".hpp",
+    ".cu",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".fish",
+    ".makefile",
+    ".cmake",
+    ".tex",
+    ".bib",
+    ".bst",
+    ".cls",
+    ".sty",
+    ".html",
+    ".css",
+    ".js",
+    ".ts",
+    ".jsx",
+    ".tsx",
+    ".xml",
+    ".csv",
+    ".tsv",
+    ".sql",
+    ".r",
+    ".R",
+    ".go",
+    ".rs",
+    ".java",
+    ".scala",
+    ".kt",
+    ".swift",
+    ".rb",
+    ".pl",
+    ".pm",
+    ".lua",
+    ".zig",
+    ".nim",
+    ".gitignore",
+    ".dockerignore",
+    ".editorconfig",
+    ".jsonl",
+    ".ndjson",
+    ".env",
+    ".cff",
 }
 
 TEXT_FILENAMES = {
-    "Makefile", "Dockerfile", "LICENSE", "Procfile", "Gemfile",
-    "Rakefile", "Vagrantfile", ".gitignore", ".dockerignore",
+    "Makefile",
+    "Dockerfile",
+    "LICENSE",
+    "Procfile",
+    "Gemfile",
+    "Rakefile",
+    "Vagrantfile",
+    ".gitignore",
+    ".dockerignore",
 }
 
 DEFAULT_MAX_BYTES = 512_000  # 512 KB per file cap
@@ -168,6 +255,7 @@ def _ensure_encoder():
         return _encoder_ready
     try:
         from sep_text_manifold import encode, native  # noqa: F401
+
         native.set_use_native(True)
         _encoder_ready = True
     except Exception:
@@ -182,9 +270,12 @@ def _compute_sig(data: bytes, precision: int = 3) -> Optional[str]:
     if len(data) < 512:
         return None
     from sep_text_manifold import encode
+
     metrics = encode.encode_window(data[:512])
     return encode.signature_from_metrics(
-        metrics["coherence"], metrics["stability"], metrics["entropy"],
+        metrics["coherence"],
+        metrics["stability"],
+        metrics["entropy"],
         precision=precision,
     )
 
@@ -199,6 +290,7 @@ def _compute_chaos_result(raw: bytes) -> Optional[Dict]:
 
     try:
         from src.manifold.sidecar import encode_text
+
         encoded = encode_text(
             raw.decode("utf-8", errors="replace")[:4096],
             window_bytes=512,
@@ -211,12 +303,14 @@ def _compute_chaos_result(raw: bytes) -> Optional[Dict]:
 
     windows = []
     for win in encoded.windows:
-        windows.append({
-            "fluctuation_persistence": win.hazard,
-            "entropy": win.entropy,
-            "coherence": win.coherence,
-            "collapse_detected": win.hazard >= 0.35,
-        })
+        windows.append(
+            {
+                "fluctuation_persistence": win.hazard,
+                "entropy": win.entropy,
+                "coherence": win.coherence,
+                "collapse_detected": win.hazard >= 0.35,
+            }
+        )
     if not windows:
         return None
 
@@ -228,7 +322,9 @@ def _compute_chaos_result(raw: bytes) -> Optional[Dict]:
         "chaos_score": avg_fp,
         "entropy": avg_entropy,
         "coherence": avg_coherence,
-        "collapse_risk": "HIGH" if avg_fp >= 0.35 else "MODERATE" if avg_fp >= 0.15 else "LOW",
+        "collapse_risk": (
+            "HIGH" if avg_fp >= 0.35 else "MODERATE" if avg_fp >= 0.15 else "LOW"
+        ),
         "windows_analyzed": len(windows),
     }
 
@@ -238,10 +334,19 @@ def _compute_chaos_result(raw: bytes) -> Optional[Dict]:
 # ===================================================================
 @mcp.tool()
 def ingest_repo(
-    root_dir: Annotated[str, Field(description="Directory to ingest relative to repo root (default '.')")] = ".",
-    max_bytes_per_file: Annotated[int, Field(description="Maximum bytes to read per file (default 512 KB)")] = DEFAULT_MAX_BYTES,
-    clear_first: Annotated[bool, Field(description="Wipe all existing manifold keys before ingesting")] = False,
-    compute_chaos: Annotated[bool, Field(description="Also compute chaos profiles for each file")] = True,
+    root_dir: Annotated[
+        str,
+        Field(description="Directory to ingest relative to repo root (default '.')"),
+    ] = ".",
+    max_bytes_per_file: Annotated[
+        int, Field(description="Maximum bytes to read per file (default 512 KB)")
+    ] = DEFAULT_MAX_BYTES,
+    clear_first: Annotated[
+        bool, Field(description="Wipe all existing manifold keys before ingesting")
+    ] = False,
+    compute_chaos: Annotated[
+        bool, Field(description="Also compute chaos profiles for each file")
+    ] = True,
 ) -> str:
     """Full symbolic-dynamics ingest of the repository.
 
@@ -253,7 +358,7 @@ def ingest_repo(
     if not v.ping():
         return "❌ Valkey not reachable on localhost:6379."
 
-    target = REPO_ROOT / root_dir
+    target = WORKSPACE_ROOT / root_dir
     if not target.exists():
         return f"❌ Directory not found: {target}"
 
@@ -385,10 +490,22 @@ def ingest_repo(
 # ===================================================================
 @mcp.tool()
 def search_code(
-    query: Annotated[str, Field(description="Search string or Python regex pattern to find in indexed files")],
-    max_results: Annotated[int, Field(description="Maximum number of matching files to return")] = 20,
-    file_pattern: Annotated[str, Field(description="Glob pattern to filter file paths (e.g. '*.py', 'src/*')")] = "*",
-    case_sensitive: Annotated[bool, Field(description="Whether the search is case-sensitive")] = False,
+    query: Annotated[
+        str,
+        Field(
+            description="Search string or Python regex pattern to find in indexed files"
+        ),
+    ],
+    max_results: Annotated[
+        int, Field(description="Maximum number of matching files to return")
+    ] = 20,
+    file_pattern: Annotated[
+        str,
+        Field(description="Glob pattern to filter file paths (e.g. '*.py', 'src/*')"),
+    ] = "*",
+    case_sensitive: Annotated[
+        bool, Field(description="Whether the search is case-sensitive")
+    ] = False,
 ) -> str:
     """Search indexed codebase files by keyword or regex pattern.
 
@@ -410,7 +527,7 @@ def search_code(
     scanned = 0
 
     for key in v.r.scan_iter(f"{DOC_PREFIX}*", count=500):
-        rel = key[len(DOC_PREFIX):]
+        rel = key[len(DOC_PREFIX) :]
         if file_pattern != "*" and not fnmatch(rel, file_pattern):
             continue
 
@@ -427,7 +544,7 @@ def search_code(
         snippets = []
         seen_lines = set()
         for m in matches[:5]:
-            line_start = content[:m.start()].count("\n")
+            line_start = content[: m.start()].count("\n")
             ctx_start = max(0, line_start - 2)
             ctx_end = min(len(lines), line_start + 3)
             for i in range(ctx_start, ctx_end):
@@ -455,7 +572,12 @@ def search_code(
 # ===================================================================
 @mcp.tool()
 def get_file(
-    path: Annotated[str, Field(description="File path relative to repo root (e.g. 'src/manifold/sidecar.py')")]
+    path: Annotated[
+        str,
+        Field(
+            description="File path relative to repo root (e.g. 'src/manifold/sidecar.py')"
+        ),
+    ],
 ) -> str:
     """Read a specific file from the Valkey index.
 
@@ -470,7 +592,7 @@ def get_file(
     if content is None:
         candidates = []
         for key in v.r.scan_iter(f"{DOC_PREFIX}*{Path(path).name}*", count=200):
-            candidates.append(key[len(DOC_PREFIX):])
+            candidates.append(key[len(DOC_PREFIX) :])
         if candidates:
             suggestion = "\n".join(f"  • {c}" for c in candidates[:10])
             return f"❌ '{path}' not found. Did you mean:\n{suggestion}"
@@ -486,7 +608,12 @@ def get_file(
 # ===================================================================
 @mcp.tool()
 def list_indexed_files(
-    pattern: Annotated[str, Field(description="Glob pattern to filter (e.g. '*.py', 'src/manifold/*', 'scripts/**')")] = "*",
+    pattern: Annotated[
+        str,
+        Field(
+            description="Glob pattern to filter (e.g. '*.py', 'src/manifold/*', 'scripts/**')"
+        ),
+    ] = "*",
     max_results: Annotated[int, Field(description="Maximum paths to return")] = 200,
 ) -> str:
     """List files in the Valkey codebase index.
@@ -507,7 +634,7 @@ def list_indexed_files(
                     break
     else:
         for key in v.r.scan_iter(f"{DOC_PREFIX}*", count=500):
-            rel = key[len(DOC_PREFIX):]
+            rel = key[len(DOC_PREFIX) :]
             if pattern == "*" or fnmatch(rel, pattern):
                 paths.append(rel)
                 if len(paths) >= max_results:
@@ -576,7 +703,10 @@ def get_index_stats() -> str:
 # ===================================================================
 @mcp.tool()
 def compute_signature(
-    text: Annotated[str, Field(description="The raw text string to compress into manifold signatures")]
+    text: Annotated[
+        str,
+        Field(description="The raw text string to compress into manifold signatures"),
+    ],
 ) -> str:
     """Compress text into structural manifold signatures.
 
@@ -587,6 +717,7 @@ def compute_signature(
         return "❌ Native encoder (sep_text_manifold) not available."
 
     from src.manifold.sidecar import encode_text
+
     encoded = encode_text(
         text,
         window_bytes=512,
@@ -613,8 +744,15 @@ def compute_signature(
 # ===================================================================
 @mcp.tool()
 def verify_snippet(
-    snippet: Annotated[str, Field(description="Text snippet to verify against the codebase index (must be ≥512 bytes)")],
-    coverage_threshold: Annotated[float, Field(description="Minimum safe coverage ratio (0.0-1.0, default 0.5)")] = 0.5,
+    snippet: Annotated[
+        str,
+        Field(
+            description="Text snippet to verify against the codebase index (must be ≥512 bytes)"
+        ),
+    ],
+    coverage_threshold: Annotated[
+        float, Field(description="Minimum safe coverage ratio (0.0-1.0, default 0.5)")
+    ] = 0.5,
 ) -> str:
     """Verify a snippet against the codebase manifold index.
 
@@ -634,6 +772,7 @@ def verify_snippet(
         return "❌ No manifold index available. Run ingest_repo first."
 
     from src.manifold.sidecar import verify_snippet as _verify
+
     result = _verify(
         text=snippet,
         index=index,
@@ -659,7 +798,12 @@ def verify_snippet(
 # ===================================================================
 @mcp.tool()
 def get_file_signature(
-    path: Annotated[str, Field(description="File path relative to repo root (e.g. 'src/manifold/sidecar.py')")]
+    path: Annotated[
+        str,
+        Field(
+            description="File path relative to repo root (e.g. 'src/manifold/sidecar.py')"
+        ),
+    ],
 ) -> str:
     """Get the structural manifold signature for a specific indexed file.
 
@@ -691,9 +835,15 @@ def get_file_signature(
 # ===================================================================
 @mcp.tool()
 def search_by_structure(
-    signature: Annotated[str, Field(description="Target signature like 'c0.418_s0.760_e0.957'")],
-    tolerance: Annotated[float, Field(description="Max per-component deviation (default 0.05)")] = 0.05,
-    max_results: Annotated[int, Field(description="Maximum number of similar files to return")] = 20,
+    signature: Annotated[
+        str, Field(description="Target signature like 'c0.418_s0.760_e0.957'")
+    ],
+    tolerance: Annotated[
+        float, Field(description="Max per-component deviation (default 0.05)")
+    ] = 0.05,
+    max_results: Annotated[
+        int, Field(description="Maximum number of similar files to return")
+    ] = 20,
 ) -> str:
     """Find files whose structural signature is close to the given one.
 
@@ -710,7 +860,7 @@ def search_by_structure(
 
     matches = []
     for key in v.r.scan_iter(f"{SIG_PREFIX}*", count=500):
-        rel = key[len(SIG_PREFIX):]
+        rel = key[len(SIG_PREFIX) :]
         sig_val = v.r.get(key)
         if not sig_val:
             continue
@@ -744,8 +894,13 @@ _active_observer = None
 
 @mcp.tool()
 def start_watcher(
-    watch_dir: Annotated[str, Field(description="Directory to monitor relative to repo root (default '.')")] = ".",
-    max_bytes_per_file: Annotated[int, Field(description="Maximum bytes to read per file (default 512 KB)")] = DEFAULT_MAX_BYTES,
+    watch_dir: Annotated[
+        str,
+        Field(description="Directory to monitor relative to repo root (default '.')"),
+    ] = ".",
+    max_bytes_per_file: Annotated[
+        int, Field(description="Maximum bytes to read per file (default 512 KB)")
+    ] = DEFAULT_MAX_BYTES,
 ) -> str:
     """Start a filesystem watcher that auto-ingests file saves into Valkey.
 
@@ -766,7 +921,7 @@ def start_watcher(
     except ImportError:
         return "❌ watchdog not installed. Run: pip install watchdog"
 
-    target = REPO_ROOT / watch_dir
+    target = WORKSPACE_ROOT / watch_dir
     if not target.exists():
         return f"❌ Directory not found: {target}"
 
@@ -778,7 +933,7 @@ def start_watcher(
             if not path.is_file() or _should_skip(path):
                 return
             try:
-                rel = str(path.relative_to(REPO_ROOT))
+                rel = str(path.relative_to(WORKSPACE_ROOT))
             except ValueError:
                 return
             try:
@@ -815,6 +970,19 @@ def start_watcher(
             if not event.is_directory:
                 self._ingest(event.src_path)
 
+        def on_deleted(self, event):
+            if not event.is_directory:
+                path = Path(event.src_path)
+                try:
+                    rel = str(path.relative_to(WORKSPACE_ROOT))
+                except ValueError:
+                    return
+                vk = _get_valkey()
+                vk.r.delete(f"{DOC_PREFIX}{rel}")
+                vk.r.delete(f"{SIG_PREFIX}{rel}")
+                vk.r.delete(f"manifold:chaos:{rel}")
+                vk.r.zrem(FILE_LIST_KEY, rel)
+
     handler = _Handler()
     observer = Observer()
     observer.schedule(handler, str(target), recursive=True)
@@ -830,8 +998,15 @@ def start_watcher(
 # ===================================================================
 @mcp.tool()
 def inject_fact(
-    fact_id: Annotated[str, Field(description="Unique identifier for the fact (e.g. 'project_architecture_v2')")],
-    fact_text: Annotated[str, Field(description="The factual text to assimilate into the codebook")],
+    fact_id: Annotated[
+        str,
+        Field(
+            description="Unique identifier for the fact (e.g. 'project_architecture_v2')"
+        ),
+    ],
+    fact_text: Annotated[
+        str, Field(description="The factual text to assimilate into the codebook")
+    ],
 ) -> str:
     """Inject a new fact into the Working Memory codebook (zero-shot learning).
 
@@ -846,12 +1021,29 @@ def inject_fact(
     return f"🚀 Fact '{fact_id}' injected into the Dynamic Semantic Codebook."
 
 
+@mcp.tool()
+def remove_fact(
+    fact_id: Annotated[
+        str, Field(description="Unique identifier for the fact to remove")
+    ],
+) -> str:
+    """Remove a fact from the Working Memory codebook."""
+    v = _get_valkey()
+    if not v.ping():
+        return "❌ Valkey not reachable."
+
+    v.remove_document(fact_id)
+    return f"🗑️ Fact '{fact_id}' removed from the Dynamic Semantic Codebook."
+
+
 # ===================================================================
 # CHAOS EXPANSION TOOLS (new in this version)
 # ===================================================================
 @mcp.tool()
 def analyze_code_chaos(
-    path: Annotated[str, Field(description="File path relative to repo root (e.g. 'mcp_server.py')")]
+    path: Annotated[
+        str, Field(description="File path relative to repo root (e.g. 'mcp_server.py')")
+    ],
 ) -> str:
     """Return the full ChaosResult for any indexed file – identical to three_body_demo.py.
 
@@ -878,8 +1070,13 @@ Windows analyzed                      : {result['windows_analyzed']}
 
 @mcp.tool()
 def batch_chaos_scan(
-    pattern: Annotated[str, Field(description="Glob pattern to filter files (e.g. '*.py', 'src/*.cpp')")] = "*.py",
-    max_files: Annotated[int, Field(description="Maximum number of highest-risk files to return")] = 50,
+    pattern: Annotated[
+        str,
+        Field(description="Glob pattern to filter files (e.g. '*.py', 'src/*.cpp')"),
+    ] = "*.py",
+    max_files: Annotated[
+        int, Field(description="Maximum number of highest-risk files to return")
+    ] = 50,
 ) -> str:
     """Run the full GPU-style validation across the repo (like gpu_batch_validation.py).
 
@@ -891,7 +1088,7 @@ def batch_chaos_scan(
 
     results = []
     for key in v.r.scan_iter("manifold:chaos:*", count=500):
-        rel = key[len("manifold:chaos:"):]
+        rel = key[len("manifold:chaos:") :]
         if pattern != "*" and not fnmatch(rel, pattern):
             continue
 
@@ -909,7 +1106,9 @@ def batch_chaos_scan(
     if not results:
         return f"No chaos profiles found matching '{pattern}'."
 
-    lines = [f"🔍 Batch Chaos Scan (Top {len(results)} highest risk files matching {pattern}):\n"]
+    lines = [
+        f"🔍 Batch Chaos Scan (Top {len(results)} highest risk files matching {pattern}):\n"
+    ]
     for score, rel, chaos in results:
         risk = chaos.get("collapse_risk", "UNKNOWN")
         lines.append(f"  [{risk}] {score:.3f} | {rel}")
@@ -919,8 +1118,15 @@ def batch_chaos_scan(
 
 @mcp.tool()
 def predict_structural_ejection(
-    path: Annotated[str, Field(description="File path relative to repo root to analyze for ejection risk")],
-    horizon_days: Annotated[int, Field(description="Number of days to forecast into the future")] = 30,
+    path: Annotated[
+        str,
+        Field(
+            description="File path relative to repo root to analyze for ejection risk"
+        ),
+    ],
+    horizon_days: Annotated[
+        int, Field(description="Number of days to forecast into the future")
+    ] = 30,
 ) -> str:
     """Predicts when a file will 'eject' (become unmaintainable) using the same macroscopic instability correlation as the 3-body paper.
 
@@ -945,7 +1151,9 @@ def predict_structural_ejection(
 
 @mcp.tool()
 def visualize_manifold_trajectory(
-    path: Annotated[str, Field(description="File path relative to repo root to visualize")]
+    path: Annotated[
+        str, Field(description="File path relative to repo root to visualize")
+    ],
 ) -> str:
     """Generates the exact 4-panel dashboard (physical reality colored by chaos score + scatter vs LLE analog + time series).
 
@@ -958,6 +1166,7 @@ def visualize_manifold_trajectory(
     Saves a PNG to reports/ and returns the metrics summary + file path.
     """
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import numpy as np
@@ -970,6 +1179,7 @@ def visualize_manifold_trajectory(
     # Encode the full file to get per-window metrics
     try:
         from src.manifold.sidecar import encode_text
+
         encoded = encode_text(
             content[:8192],  # cap at 8 KB for visualization
             window_bytes=512,
@@ -1028,28 +1238,62 @@ def visualize_manifold_trajectory(
 
     # Panel 1 (top-left): Structural trajectory – byte position vs coherence
     ax1 = axes[0, 0]
-    sc1 = ax1.scatter(byte_starts, coherences, c=hazards, cmap=cmap, s=60, edgecolors="k", linewidth=0.5, vmin=0, vmax=0.5)
+    sc1 = ax1.scatter(
+        byte_starts,
+        coherences,
+        c=hazards,
+        cmap=cmap,
+        s=60,
+        edgecolors="k",
+        linewidth=0.5,
+        vmin=0,
+        vmax=0.5,
+    )
     ax1.set_xlabel("Byte Offset", fontsize=10)
     ax1.set_ylabel("Coherence", fontsize=10)
     ax1.set_title("Physical Reality (colored by chaos score)", fontsize=11)
-    ax1.axhline(y=np.mean(coherences), color="gray", linestyle="--", alpha=0.5, label=f"mean={avg_coherence:.3f}")
+    ax1.axhline(
+        y=np.mean(coherences),
+        color="gray",
+        linestyle="--",
+        alpha=0.5,
+        label=f"mean={avg_coherence:.3f}",
+    )
     ax1.legend(fontsize=8)
     fig.colorbar(sc1, ax=ax1, label="Hazard (Chaos Score)")
 
     # Panel 2 (top-right): Chaos vs LLE analog – entropy vs hazard
     ax2 = axes[0, 1]
-    sc2 = ax2.scatter(entropies, hazards, c=coherences, cmap="viridis", s=60, edgecolors="k", linewidth=0.5)
+    sc2 = ax2.scatter(
+        entropies,
+        hazards,
+        c=coherences,
+        cmap="viridis",
+        s=60,
+        edgecolors="k",
+        linewidth=0.5,
+    )
     ax2.set_xlabel("Entropy", fontsize=10)
     ax2.set_ylabel("Hazard (Chaos Score)", fontsize=10)
     ax2.set_title("Scatter vs LLE Analog", fontsize=11)
-    ax2.axhline(y=0.35, color="red", linestyle="--", alpha=0.7, label="PERSISTENT_HIGH threshold")
-    ax2.axhline(y=0.15, color="orange", linestyle="--", alpha=0.7, label="OSCILLATION threshold")
+    ax2.axhline(
+        y=0.35,
+        color="red",
+        linestyle="--",
+        alpha=0.7,
+        label="PERSISTENT_HIGH threshold",
+    )
+    ax2.axhline(
+        y=0.15, color="orange", linestyle="--", alpha=0.7, label="OSCILLATION threshold"
+    )
     ax2.legend(fontsize=8)
     fig.colorbar(sc2, ax=ax2, label="Coherence")
 
     # Panel 3 (bottom-left): Time series – all three metrics
     ax3 = axes[1, 0]
-    ax3.plot(indices, hazards, "r-o", markersize=4, linewidth=1.5, label="Hazard (Chaos)")
+    ax3.plot(
+        indices, hazards, "r-o", markersize=4, linewidth=1.5, label="Hazard (Chaos)"
+    )
     ax3.plot(indices, entropies, "b-s", markersize=4, linewidth=1.5, label="Entropy")
     ax3.plot(indices, coherences, "g-^", markersize=4, linewidth=1.5, label="Coherence")
     ax3.axhline(y=0.35, color="red", linestyle=":", alpha=0.5)
@@ -1064,20 +1308,28 @@ def visualize_manifold_trajectory(
     state_labels = ["LOW_FLUCTUATION", "OSCILLATION", "PERSISTENT_HIGH"]
     state_colors = ["#2ecc71", "#f39c12", "#e74c3c"]
     state_vals = [state_counts[s] for s in state_labels]
-    bars = ax4.bar(state_labels, state_vals, color=state_colors, edgecolor="k", linewidth=0.5)
+    bars = ax4.bar(
+        state_labels, state_vals, color=state_colors, edgecolor="k", linewidth=0.5
+    )
     ax4.set_ylabel("Window Count", fontsize=10)
     ax4.set_title("Symbolic State Distribution", fontsize=11)
     for bar, val in zip(bars, state_vals):
         if val > 0:
-            ax4.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.2,
-                     str(val), ha="center", va="bottom", fontweight="bold")
+            ax4.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.2,
+                str(val),
+                ha="center",
+                va="bottom",
+                fontweight="bold",
+            )
     ax4.set_xticks(range(len(state_labels)))
     ax4.set_xticklabels(["LOW", "OSCILLATION", "PERSISTENT\nHIGH"], fontsize=9)
 
     plt.tight_layout(rect=[0, 0, 1, 0.93])
 
     # Save to reports/
-    report_dir = REPO_ROOT / "reports"
+    report_dir = WORKSPACE_ROOT / "reports"
     report_dir.mkdir(exist_ok=True)
     safe_name = re.sub(r"[^\w.]", "_", path)
     out_path = report_dir / f"manifold_trajectory_{safe_name}.png"
@@ -1085,10 +1337,12 @@ def visualize_manifold_trajectory(
     plt.close(fig)
 
     # Build text summary
-    collapse_risk = "HIGH" if avg_hazard >= 0.35 else "MODERATE" if avg_hazard >= 0.15 else "LOW"
+    collapse_risk = (
+        "HIGH" if avg_hazard >= 0.35 else "MODERATE" if avg_hazard >= 0.15 else "LOW"
+    )
 
     return (
-        f"📊 4-Panel Manifold Dashboard saved to: {out_path.relative_to(REPO_ROOT)}\n\n"
+        f"📊 4-Panel Manifold Dashboard saved to: {out_path.relative_to(WORKSPACE_ROOT)}\n\n"
         f"  File                : {path}\n"
         f"  Windows analyzed    : {n}\n"
         f"  Avg Chaos Score     : {avg_hazard:.3f}\n"
@@ -1112,8 +1366,12 @@ def visualize_manifold_trajectory(
 # Entry point
 # ===================================================================
 def main():
-    print("🚀 Symbolic Chaos Proxy MCP Server started – ready for orbital insertion.", file=sys.stderr)
+    print(
+        "🚀 Symbolic Chaos Proxy MCP Server started – ready for orbital insertion.",
+        file=sys.stderr,
+    )
     mcp.run()
+
 
 if __name__ == "__main__":
     main()
