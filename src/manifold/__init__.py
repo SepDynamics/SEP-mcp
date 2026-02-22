@@ -1,0 +1,37 @@
+"""Convenience helpers to expose structural manifold functionality as a library."""
+
+try:
+    from .encoder import build_signature_index
+except ImportError:
+    build_signature_index = None  # sep_text_manifold not installed
+
+from .sidecar import (
+    EncodedWindow,
+    EncodeResult,
+    ManifoldIndex,
+    VerificationResult,
+    build_index,
+    build_manifold_index,
+    encode_text,
+    encode_text_to_windows,
+    load_index,
+    reconstruct_from_windows,
+    verify_snippet,
+)
+from .verifier import score_documents
+
+__all__ = [
+    "build_signature_index",
+    "build_index",
+    "build_manifold_index",
+    "encode_text",
+    "encode_text_to_windows",
+    "EncodedWindow",
+    "EncodeResult",
+    "ManifoldIndex",
+    "VerificationResult",
+    "load_index",
+    "reconstruct_from_windows",
+    "score_documents",
+    "verify_snippet",
+]
