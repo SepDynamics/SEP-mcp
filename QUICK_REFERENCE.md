@@ -85,6 +85,7 @@ remove_fact          fact_id="api_rules"
 1. search_code  (query, file_pattern)
 2. get_file  (path)
 3. search_by_structure  (signature)
+4. cluster_codebase_structure  (pattern, n_clusters)
 ```
 
 ---

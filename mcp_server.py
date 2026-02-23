@@ -1552,6 +1552,141 @@ def visualize_manifold_trajectory(
 
 
 # ===================================================================
+# TOOL: cluster_codebase_structure
+# ===================================================================
+@mcp.tool()
+def cluster_codebase_structure(
+    pattern: Annotated[
+        str,
+        Field(
+            description="Glob pattern to constrain the files to cluster (e.g. '*.py')"
+        ),
+    ] = "*",
+    n_clusters: Annotated[
+        int, Field(description="Number of physical structural groups to form")
+    ] = 5,
+) -> str:
+    """Cluster codebase files into "obscure groupings" based on their structural signatures.
+
+    Uses K-Means clustering in the Structural Phase Space (Coherence vs Entropy)
+    to group files with similar physical layouts and complexities. This corresponds
+    directly to the physical clusters seen in the `visualize_manifold_trajectory`
+    heatmap dashboard.
+    """
+    v = _get_valkey()
+    if not v.ping():
+        return "❌ Valkey not reachable."
+
+    import numpy as np
+
+    try:
+        import faiss
+    except ImportError:
+        return "❌ faiss is required for clustering (run: pip install faiss-cpu)."
+
+    vectors = []
+    file_metas = []
+
+    for key_bytes in v.raw_r.scan_iter(
+        f"{FILE_HASH_PREFIX}*".encode("utf-8"), count=500
+    ):
+        try:
+            key_str = key_bytes.decode("utf-8")
+            rel_path = key_str[len(FILE_HASH_PREFIX) :]
+            if pattern != "*" and not fnmatch(rel_path, pattern):
+                continue
+
+            raw_sig = v.raw_r.hget(key_bytes, b"sig")
+            raw_chaos = v.raw_r.hget(key_bytes, b"chaos")
+
+            if not raw_sig:
+                continue
+
+            sig_str = raw_sig.decode("utf-8", errors="replace")
+            # Parse 'cX.XXX_sX.XXX_eX.XXX'
+            parts = sig_str.split("_")
+            c = float(parts[0][1:])
+            s = float(parts[1][1:])
+            e = float(parts[2][1:])
+
+            chaos = 0.0
+            if raw_chaos:
+                chaos = float(raw_chaos.decode("utf-8", errors="replace"))
+
+            # We cluster primarily on Coherence and Entropy (matching the 4th chart)
+            vectors.append([c, e])
+            file_metas.append((rel_path, c, s, e, chaos))
+        except Exception:
+            pass
+
+    if not vectors:
+        return f"❌ No structural signatures found matching pattern '{pattern}'."
+
+    n_samples = len(vectors)
+    k = min(n_clusters, n_samples)
+    if k < 2:
+        return (
+            f"Not enough files ({n_samples}) to form multiple clusters.\n"
+            f"Found: {file_metas[0][0]}"
+        )
+
+    X = np.array(vectors, dtype=np.float32)
+
+    # L2 normalized K-Means clustering using Faiss
+    kmeans = faiss.Kmeans(d=2, k=k, niter=20, verbose=False)
+    kmeans.train(X)
+    distances, labels = kmeans.index.search(X, 1)
+
+    # Group files by assigned cluster
+    clusters = {i: [] for i in range(k)}
+    for row_idx, cluster_idx in enumerate(labels.flatten()):
+        clusters[int(cluster_idx)].append(file_metas[row_idx])
+
+    output = [f"🧠 Structural Codebase Clusters (k={k}, files={n_samples})"]
+    output.append(f"Matching pattern: '{pattern}'\n")
+
+    for clus_id in range(k):
+        members = clusters[clus_id]
+        if not members:
+            continue
+
+        # Sort members by chaos (highest first)
+        members.sort(key=lambda x: x[4], reverse=True)
+
+        avg_c = np.mean([m[1] for m in members])
+        avg_e = np.mean([m[3] for m in members])
+        avg_chaos = np.mean([m[4] for m in members])
+
+        # Attempt to label the cluster heuristically based on the feature space
+        if avg_chaos > 0.35:
+            label = "HIGH-CHAOS (Complex/Unstable)"
+        elif avg_e > 0.85 and avg_c < 0.30:
+            label = "DENSE/ENTROPIC (Data Algorithms/Math)"
+        elif avg_e < 0.60:
+            label = "SPARSE (Boilerplate/Configs)"
+        elif avg_c > 0.60:
+            label = "HIGH-COHERENCE (Linear/Simple)"
+        else:
+            label = "MIXED-FLUCTUATION (Standard Code)"
+
+        output.append(f"=== Cluster {clus_id + 1}: {label} ===")
+        output.append(
+            f"  Size: {len(members)} files | Avg Chaos: {avg_chaos:.3f} | "
+            f"Centroid (C: {avg_c:.3f}, E: {avg_e:.3f})"
+        )
+
+        # Display top 10 members as representatives
+        for file_path, c, s, e, chaos in members[:10]:
+            output.append(f"    {chaos:.3f} | {file_path:<50} (c={c:.3f}, e={e:.3f})")
+
+        if len(members) > 10:
+            output.append(f"    ... and {len(members) - 10} more files")
+        output.append("")
+
+    return "\n".join(output)
+
+
+# ===================================================================
 # TOOL: analyze_git_churn
 # ===================================================================
 @mcp.tool()

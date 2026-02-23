@@ -26,6 +26,7 @@ from mcp_server import (
     analyze_blast_radius,
     analyze_code_chaos,
     batch_chaos_scan,
+    cluster_codebase_structure,
     compute_combined_risk,
     compute_signature,
     get_file,
@@ -255,6 +256,14 @@ def test_inject_remove_fact():
 # ---------------------------------------------------------------------------
 # Chaos & Structural Tension Tests
 # ---------------------------------------------------------------------------
+
+
+def test_cluster_codebase_structure():
+    res = cluster_codebase_structure(pattern="*.py", n_clusters=2)
+    assert "Structural Codebase Clusters" in res
+    assert "Cluster" in res
+    # Ensure it parsed files and didn't just err out
+    assert "=" in res or "No structural signatures" in res
 
 
 def test_analyze_code_chaos():

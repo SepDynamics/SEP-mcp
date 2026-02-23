@@ -2,7 +2,7 @@
 
 **Server**: `manifold` — Structural Chaos Proxy  
 **Protocol**: Model Context Protocol (MCP)  
-**Tools**: 20
+**Tools**: 21
 
 This is the single comprehensive reference for every tool provided by the Manifold MCP server. Each tool includes its purpose, parameters, expected output, and recommended usage context.
 
@@ -240,6 +240,36 @@ Files structurally similar to c0.213_s0.000_e0.928 (±0.1):
   c0.212_s0.000_e0.928  Δ=0.0010  scripts/rag/bulk_valkey_ingest.py
   c0.211_s0.000_e0.927  Δ=0.0020  src/manifold/router.py
   ...
+```
+
+---
+
+### `cluster_codebase_structure`
+
+Automatically dump the mathematical "obscure file groupings" seen on the Coherence vs Entropy Heatmap (Chart 4) into discrete, physically clustered lists of files. 
+
+| Parameter | Default | Description |
+|---|---|---|
+| `pattern` | `"*"` | Glob pattern to limit clustering scope |
+| `n_clusters` | `5` | Maximum number of physical structural groups to form |
+
+```
+cluster_codebase_structure  (pattern="*.py", n_clusters=3)
+```
+
+```
+🧠 Structural Codebase Clusters (k=3, files=45)
+Matching pattern: '*.py'
+
+=== Cluster 1: HIGH-CHAOS (Complex/Unstable) ===
+  Size: 5 files | Avg Chaos: 0.395 | Centroid (C: 0.280, E: 0.910)
+    0.412 | complex_router.py (c=0.210, e=0.950)
+    ...
+
+=== Cluster 2: HIGH-COHERENCE (Linear/Simple) ===
+  Size: 25 files | Avg Chaos: 0.050 | Centroid (C: 0.750, E: 0.400)
+    0.010 | simple_models.py (c=0.880, e=0.350)
+    ...
 ```
 
 ---

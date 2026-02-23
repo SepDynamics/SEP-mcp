@@ -72,7 +72,7 @@ compute_combined_risk   (path="target_file.py")
 
 ---
 
-## Tool Reference (20 Tools)
+## Tool Reference (21 Tools)
 
 All tools are documented with parameters, examples, and workflows in **[MCP_TOOL_GUIDE.md](MCP_TOOL_GUIDE.md)**. Quick command reference in **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)**.
 
@@ -91,6 +91,7 @@ All tools are documented with parameters, examples, and workflows in **[MCP_TOOL
 | `search_code` | Keyword or regex search across all indexed files with context |
 | `get_file_signature` | Structural fingerprint (coherence/stability/entropy) for a file |
 | `search_by_structure` | Find files with similar structural signatures |
+| `cluster_codebase_structure` | Cluster the codebase using Coherence/Entropy structural groupings |
 
 ### Chaos Analysis
 | Tool | Purpose |
