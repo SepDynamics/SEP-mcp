@@ -1,120 +1,93 @@
-# MCP Manifold Quick Reference
+# Quick Reference — Manifold MCP Server
 
-**Quick command reference for the Manifold MCP server. For detailed documentation, see [MCP_TOOL_GUIDE.md](MCP_TOOL_GUIDE.md).**
-
----
-
-## Essential Commands
-
-### 1. Initial Setup (First-Time Use)
-
-```
-# Clear and index repository
-mcp--manifold--ingest_repo
-  root_dir: "."
-  clear_first: true
-  compute_chaos: true
-  lite: false
-
-# Verify successful indexing
-mcp--manifold--get_index_stats
-```
-
-**Expected Stats** (this repo):
-- **47 files** indexed (768 KB)
-- **Average chaos**: 0.408 (HIGH)
-- **High-risk files**: 41/47
+All 22 tools at a glance. Full documentation: [MCP_TOOL_GUIDE.md](MCP_TOOL_GUIDE.md).
 
 ---
 
-### 2. Find High-Risk Files
+## Indexing & Monitoring
 
 ```
-mcp--manifold--batch_chaos_scan
-  pattern: "*.py"
-  scope: "*"
-  max_files: 30
+ingest_repo           root_dir="."  clear_first=true  compute_chaos=true  lite=false
+get_index_stats
+start_watcher         watch_dir="."
 ```
 
-**Top risks in this repo**:
-- [`setup.py`](setup.py:1) - 0.427
-- [`memory_benchmark.py`](memory_benchmark.py:1) - 0.423
-- [`scripts/rag/bulk_valkey_ingest.py`](scripts/rag/bulk_valkey_ingest.py:1) - 0.422
-
----
-
-### 3. Search for Code
+## File Discovery & Search
 
 ```
-# Keyword search
-mcp--manifold--search_code
-  query: "chaos_score"
-  file_pattern: "*.py"
-  max_results: 10
-
-# Regex search for patterns
-mcp--manifold--search_code
-  query: "class \w+Manager"
-  file_pattern: "*.py"
+list_indexed_files    pattern="*.py"  max_results=200
+get_file              path="src/manifold/sidecar.py"
+search_code           query="chaos_score"  file_pattern="*.py"  case_sensitive=false
+get_file_signature    path="mcp_server.py"
+search_by_structure   signature="c0.213_s0.000_e0.928"  tolerance=0.05
 ```
 
----
-
-### 4. Analyze Specific File
+## Chaos Analysis
 
 ```
-# Deep chaos analysis
-mcp--manifold--analyze_code_chaos
-  path: "mcp_server.py"
+analyze_code_chaos             path="mcp_server.py"
+batch_chaos_scan               pattern="*.py"  max_files=50
+predict_structural_ejection    path="mcp_server.py"  horizon_days=30
+visualize_manifold_trajectory  path="mcp_server.py"
+```
 
-# Visual dashboard
-mcp--manifold--visualize_manifold_trajectory
-  path: "mcp_server.py"
+## Git Integration
 
-# Read full content
-mcp--manifold--get_file
-  path: "mcp_server.py"
+```
+analyze_git_churn         path="mcp_server.py"  days_back=365
+compute_friction_score    path="mcp_server.py"
+scan_high_friction_files  pattern="*.py"  min_friction=0.20  max_files=30
+```
+
+## Dependency & Combined Risk
+
+```
+analyze_blast_radius    path="src/manifold/sidecar.py"
+compute_combined_risk   path="src/manifold/sidecar.py"
+scan_critical_files     pattern="*.py"  min_combined_risk=0.30  max_files=20
+```
+
+## Verification & Memory
+
+```
+compute_signature    text="def hello(): ..."
+verify_snippet       snippet="..."  coverage_threshold=0.5  scope="*.py"
+inject_fact          fact_id="api_rules"  fact_text="All endpoints use snake_case."
+remove_fact          fact_id="api_rules"
 ```
 
 ---
 
-### 5. Structural Search
+## Common Workflows
 
+### New Project
 ```
-# Get file's signature
-mcp--manifold--get_file_signature
-  path: "mcp_server.py"
-
-# Find similar files
-mcp--manifold--search_by_structure
-  signature: "c0.213_s0.000_e0.928"
-  tolerance: 0.05
+1. ingest_repo  (clear_first=true)
+2. get_index_stats
+3. batch_chaos_scan
+4. scan_critical_files
 ```
 
----
-
-### 6. Code Validation
-
+### Refactoring Decision
 ```
-mcp--manifold--verify_snippet
-  snippet: "def my_function():\n    pass"
-  coverage_threshold: 0.5
-  scope: "*"
+1. compute_combined_risk  (path)
+2. analyze_blast_radius   (path)
+3. predict_structural_ejection  (path)
+4. visualize_manifold_trajectory  (path)
 ```
 
----
-
-### 7. Working Memory
-
+### Sprint Planning
 ```
-# Add persistent fact
-mcp--manifold--inject_fact
-  fact_id: "api_conventions"
-  fact_text: "All API endpoints must use snake_case naming."
+1. scan_high_friction_files  (min_friction=0.15)
+2. scan_critical_files  (min_combined_risk=0.25)
+3. analyze_blast_radius for each candidate
+```
 
-# Remove fact
-mcp--manifold--remove_fact
-  fact_id: "api_conventions"
+### Find Code
+```
+1. search_code  (query, file_pattern)
+2. get_file  (path)
+3. search_by_structure  (signature)
 ```
 
 ---
@@ -122,85 +95,32 @@ mcp--manifold--remove_fact
 ## Chaos Score Ranges
 
 | Score | Level | Action |
-|-------|-------|--------|
-| 0.00-0.34 | Normal | Monitor |
-| 0.35-0.39 | Elevated | Review |
-| 0.40-0.44 | **HIGH** | Plan refactor |
-| 0.45+ | Critical | Urgent action |
+|---|---|---|
+| 0.00–0.34 | Normal | Monitor |
+| 0.35–0.39 | Elevated | Review |
+| 0.40–0.44 | **HIGH** | Plan refactor |
+| 0.45+ | Critical | Urgent |
 
-**This repo average**: 0.408 (HIGH) - typical for complex algorithmic code.
+## Risk Score Ranges
 
----
-
-## Common Workflows
-
-### New Project Analysis
-```
-1. ingest_repo (clear_first=true)
-2. get_index_stats (verify)
-3. batch_chaos_scan (find hotspots)
-4. analyze_code_chaos (deep dive on top files)
-```
-
-### Find Implementation
-```
-1. search_code (find pattern)
-2. get_file (read full content)
-3. get_file_signature (get structure)
-4. search_by_structure (find similar)
-```
-
-### Refactoring Decision
-```
-1. analyze_code_chaos (get metrics)
-2. predict_structural_ejection (get timeline)
-3. visualize_manifold_trajectory (visual inspection)
-```
-
-### Continuous Monitoring
-```
-1. start_watcher (auto-update on save)
-2. Periodic: batch_chaos_scan
-```
-
----
-
-## Tips
-
-✅ **DO**:
-- Use `clear_first=true` after major changes
-- Run `batch_chaos_scan` first to prioritize
-- Use regex in `search_code` for patterns
-- Check `get_index_stats` regularly
-
-❌ **DON'T**:
-- Don't forget to start Valkey server first
-- Don't panic at high chaos scores (context matters)
-- Don't assume paths - use `list_indexed_files`
-- Don't over-index (use `lite=true` for large repos)
+| Score | Level | Action |
+|---|---|---|
+| ≥0.40 | CRITICAL | Immediate refactoring |
+| 0.30–0.39 | HIGH | Schedule within sprint |
+| 0.20–0.29 | MODERATE | Monitor |
+| <0.20 | LOW | Acceptable |
 
 ---
 
 ## Troubleshooting
 
-**"Valkey not reachable"**
-```bash
-valkey-server  # or: redis-server
-```
-
-**"File not found"**
-```
-mcp--manifold--list_indexed_files
-  pattern: "*filename*"
-```
-
-**High memory usage**
-```
-mcp--manifold--ingest_repo
-  lite: true  # Skip chaos on tests/docs
-```
+| Problem | Solution |
+|---|---|
+| Valkey not reachable | `valkey-server` or `redis-server` |
+| File not found | `list_indexed_files  (pattern="*name*")` then re-ingest |
+| Cannot compute chaos | File <512 bytes or encoder unavailable |
+| No Git history | Ensure `.git` exists; churn degrades gracefully to 0 |
 
 ---
 
-**For comprehensive documentation**: [MCP_TOOL_GUIDE.md](MCP_TOOL_GUIDE.md)  
-**For project overview**: [README.md](README.md)
+**Full documentation**: [MCP_TOOL_GUIDE.md](MCP_TOOL_GUIDE.md) · **Project overview**: [README.md](README.md)

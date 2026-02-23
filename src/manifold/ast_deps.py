@@ -91,14 +91,26 @@ class ASTDependencyAnalyzer:
 
         return ".".join(module_parts)
 
+    # Directories to skip during AST scanning (venvs, caches, build dirs)
+    SKIP_DIRS = {
+        ".venv", "venv", ".env", "env",
+        "node_modules", "__pycache__", ".git",
+        ".tox", ".mypy_cache", ".pytest_cache",
+        "build", "dist", ".eggs", "*.egg-info",
+        "site-packages",
+    }
+
     def build_dependency_graph(self, file_pattern: str = "**/*.py") -> None:
         """Build the complete dependency graph for the repository.
 
         Args:
             file_pattern: Glob pattern to find Python files
         """
-        # Find all Python files
-        py_files = list(self.repo_root.glob(file_pattern))
+        # Find all Python files, excluding virtual environments and caches
+        py_files = [
+            p for p in self.repo_root.glob(file_pattern)
+            if not any(skip in p.parts for skip in self.SKIP_DIRS)
+        ]
 
         # Build module name mapping
         for py_file in py_files:

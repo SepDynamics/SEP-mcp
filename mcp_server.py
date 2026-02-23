@@ -64,7 +64,7 @@ import re
 import sys
 import time
 import zstandard as zstd
-from datetime import datetime
+from datetime import datetime, timezone
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Annotated, Dict, List, Optional
@@ -1561,7 +1561,7 @@ def analyze_git_churn(
             return f"❌ No Git history found for '{path}'."
 
         days_since_modified = (
-            datetime.now() - metrics.last_modified
+            datetime.now(timezone.utc) - metrics.last_modified
         ).days
 
         return f"""📈 Git Churn Analysis for {path}
