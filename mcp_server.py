@@ -1496,28 +1496,26 @@ def visualize_manifold_trajectory(
     ax3.legend(fontsize=8)
     ax3.set_ylim(-0.05, 1.05)
 
-    # Panel 4 (bottom-right): Symbolic state distribution
+    # Panel 4 (bottom-right): Heatmap of Coherence vs Entropy colored by Chaos
     ax4 = axes[1, 1]
-    state_labels = ["LOW_FLUCTUATION", "OSCILLATION", "PERSISTENT_HIGH"]
-    state_colors = ["#2ecc71", "#f39c12", "#e74c3c"]
-    state_vals = [state_counts[s] for s in state_labels]
-    bars = ax4.bar(
-        state_labels, state_vals, color=state_colors, edgecolor="k", linewidth=0.5
+    # Create a hexbin plot: x=coherence, y=entropy, color=hazard
+    hb = ax4.hexbin(
+        coherences,
+        entropies,
+        C=hazards,
+        gridsize=25,
+        cmap="magma_r",  # Dark/Red for high hazard, light for low
+        reduce_C_function=np.mean,
+        edgecolors="none",
+        mincnt=1,
     )
-    ax4.set_ylabel("Window Count", fontsize=10)
-    ax4.set_title("Symbolic State Distribution", fontsize=11)
-    for bar, val in zip(bars, state_vals):
-        if val > 0:
-            ax4.text(
-                bar.get_x() + bar.get_width() / 2,
-                bar.get_height() + 0.2,
-                str(val),
-                ha="center",
-                va="bottom",
-                fontweight="bold",
-            )
-    ax4.set_xticks(range(len(state_labels)))
-    ax4.set_xticklabels(["LOW", "OSCILLATION", "PERSISTENT\nHIGH"], fontsize=9)
+    ax4.set_xlabel("Coherence (First Number)", fontsize=10)
+    ax4.set_ylabel("Entropy (Second Number)", fontsize=10)
+    ax4.set_title("Chaos Heatmap (Branches)", fontsize=11)
+
+    # Add a colorbar specifically for the hexbin to show the chaos range
+    cb = fig.colorbar(hb, ax=ax4, label="Mean Hazard (Chaos Score)")
+    cb.ax.tick_params(labelsize=8)
 
     plt.tight_layout(rect=[0, 0, 1, 0.93])
 
@@ -1551,7 +1549,7 @@ def visualize_manifold_trajectory(
         f"    1. Structural trajectory (byte offset vs coherence, colored by chaos)\n"
         f"    2. Chaos vs LLE analog (entropy vs hazard scatter)\n"
         f"    3. Time series (hazard/entropy/coherence per window)\n"
-        f"    4. Symbolic state distribution (LOW/OSCILLATION/HIGH bar chart)"
+        f"    4. Chaos Heatmap (Coherence vs Entropy branches colored by Hazard)"
     )
 
 
@@ -1607,156 +1605,6 @@ Interpretation:
         return f"❌ {str(e)}"
     except Exception as e:
         return f"❌ Error analyzing churn: {str(e)}"
-
-
-@mcp.tool()
-def compute_friction_score(
-    path: Annotated[
-        str,
-        Field(description="File path relative to repo root"),
-    ],
-) -> str:
-    """Compute friction score = chaos × churn.
-
-    Identifies files that are BOTH complex AND frequently modified.
-    These are the highest-friction areas of the codebase.
-    """
-    from src.manifold.git_churn import GitChurnAnalyzer
-
-    path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
-
-    # Get chaos score
-    v = _get_valkey()
-    raw_chaos = v.raw_r.hget(f"{FILE_HASH_PREFIX}{path}", "chaos")
-    if not raw_chaos:
-        return f"❌ No chaos data for '{path}'. Run ingest_repo first."
-
-    try:
-        chaos_json = _decompress(raw_chaos).decode("utf-8")
-        chaos_data = json.loads(chaos_json)
-        chaos_score = chaos_data["chaos_score"]
-    except Exception:
-        return f"❌ Could not parse chaos data for '{path}'."
-
-    # Get churn score
-    try:
-        analyzer = GitChurnAnalyzer(WORKSPACE_ROOT)
-        churn_metrics = analyzer.get_file_churn(path)
-
-        if not churn_metrics:
-            return f"❌ No Git history for '{path}'."
-
-        churn_score = churn_metrics.churn_score
-        friction, risk = analyzer.compute_friction_score(chaos_score, churn_score)
-
-        return f"""🔥 Friction Analysis for {path}
-
-Chaos Score  : {chaos_score:.3f}
-Churn Score  : {churn_score:.3f}
-Friction     : {friction:.3f}
-Risk Level   : {risk}
-
-Components:
-  • Chaos  : Structural complexity ({chaos_data['collapse_risk']} risk)
-  • Churn  : {churn_metrics.recent_commits} commits in last 90 days
-  • Friction: chaos × churn = {friction:.3f}
-
-Interpretation:
-  [CRITICAL] ≥0.30 : Urgent attention needed
-  [HIGH]     ≥0.20 : Should refactor soon
-  [MODERATE] ≥0.10 : Monitor closely
-  [LOW]      <0.10 : Acceptable risk
-
-Recommendation:
-  {_get_friction_recommendation(friction, chaos_score, churn_score)}
-"""
-    except ValueError as e:
-        return f"❌ {str(e)}"
-    except Exception as e:
-        return f"❌ Error computing friction: {str(e)}"
-
-
-@mcp.tool()
-def scan_high_friction_files(
-    pattern: Annotated[
-        str,
-        Field(description="Glob pattern to filter files (e.g. '*.py', 'src/*.cpp')"),
-    ] = "*.py",
-    max_files: Annotated[
-        int, Field(description="Maximum number of files to return (default 30)")
-    ] = 30,
-) -> str:
-    """Scan repository for high-friction files (high chaos × high churn).
-
-    Returns files ranked by friction score.
-    """
-    from src.manifold.git_churn import GitChurnAnalyzer
-
-    v = _get_valkey()
-    if not v.ping():
-        return "❌ Valkey not reachable."
-
-    # Get chaos scores
-    chaos_data = {}
-    keys = []
-    rels = []
-    for key in v.r.scan_iter(f"{FILE_HASH_PREFIX}*", count=500):
-        rel = key[len(FILE_HASH_PREFIX) :]
-        from fnmatch import fnmatch
-
-        if pattern != "*" and not fnmatch(rel, pattern):
-            continue
-        keys.append(key)
-        rels.append(rel)
-
-    batch_size = 500
-    for i in range(0, len(keys), batch_size):
-        batch_keys = keys[i : i + batch_size]
-        batch_rels = rels[i : i + batch_size]
-
-        pipe = v.raw_r.pipeline(transaction=False)
-        for key in batch_keys:
-            pipe.hget(key.encode("utf-8"), b"chaos")
-        chaos_docs = pipe.execute()
-
-        for rel, chaos_bytes in zip(batch_rels, chaos_docs):
-            if chaos_bytes:
-                try:
-                    js = _decompress(chaos_bytes).decode("utf-8")
-                    chaos = json.loads(js)
-                    chaos_data[rel] = chaos["chaos_score"]
-                except Exception:
-                    pass
-
-    # Get churn data
-    try:
-        analyzer = GitChurnAnalyzer(WORKSPACE_ROOT)
-        churn_data = analyzer.get_repo_churn(file_pattern=pattern)
-    except ValueError:
-        return "❌ Not a Git repository. Friction analysis requires Git."
-
-    # Compute friction scores
-    friction_files = analyzer.get_high_friction_files(
-        chaos_data, churn_data, threshold=0.0
-    )
-
-    friction_files = friction_files[:max_files]
-
-    if not friction_files:
-        return f"No high-friction files found."
-
-    lines = [f"🔥 High-Friction Files (Top {len(friction_files)}):\n"]
-    for file_path, friction, risk in friction_files:
-        chaos = chaos_data.get(file_path, 0)
-        churn = churn_data.get(file_path)
-        churn_val = churn.churn_score if churn else 0
-
-        lines.append(
-            f"  [{risk:>8}] {friction:.3f} | {file_path}"
-            f"  (chaos={chaos:.3f}, churn={churn_val:.3f})"
-        )
-
-    return "\n".join(lines)
 
 
 @mcp.tool()
