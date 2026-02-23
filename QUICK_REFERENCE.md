@@ -1,6 +1,6 @@
 # Quick Reference — Manifold MCP Server
 
-All 22 tools at a glance. Full documentation: [MCP_TOOL_GUIDE.md](MCP_TOOL_GUIDE.md).
+All 20 tools at a glance. Full documentation: [MCP_TOOL_GUIDE.md](MCP_TOOL_GUIDE.md).
 
 ---
 
@@ -35,8 +35,6 @@ visualize_manifold_trajectory  path="mcp_server.py"
 
 ```
 analyze_git_churn         path="mcp_server.py"  days_back=365
-compute_friction_score    path="mcp_server.py"
-scan_high_friction_files  pattern="*.py"  min_friction=0.20  max_files=30
 ```
 
 ## Dependency & Combined Risk
@@ -78,9 +76,8 @@ remove_fact          fact_id="api_rules"
 
 ### Sprint Planning
 ```
-1. scan_high_friction_files  (min_friction=0.15)
-2. scan_critical_files  (min_combined_risk=0.25)
-3. analyze_blast_radius for each candidate
+1. scan_critical_files  (min_combined_risk=0.25)
+2. analyze_blast_radius for each candidate
 ```
 
 ### Find Code

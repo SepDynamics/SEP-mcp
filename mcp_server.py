@@ -14,7 +14,7 @@ Signal-first pipeline (identical to the chaos proxy):
 5. Entropy + coherence as secondary metrics
 6. Hazard gating (collapse detection) on every retrieval
 
-Tools exposed (22 total):
+Tools exposed (20 total):
   Core Analysis:
     • ingest_repo          – stream-ingest repo into Valkey (text + sigs + chaos)
     • get_index_stats      – Valkey db health + doc count
@@ -39,8 +39,6 @@ Tools exposed (22 total):
 
   Git Integration (NEW):
     • analyze_git_churn    – Git commit frequency and churn metrics
-    • compute_friction_score – chaos × churn (high-maintenance files)
-    • scan_high_friction_files – repo-wide friction scan
 
   Dependency Analysis (NEW):
     • analyze_blast_radius – AST-based impact analysis
@@ -1509,9 +1507,9 @@ def visualize_manifold_trajectory(
         edgecolors="none",
         mincnt=1,
     )
-    ax4.set_xlabel("Coherence (First Number)", fontsize=10)
-    ax4.set_ylabel("Entropy (Second Number)", fontsize=10)
-    ax4.set_title("Chaos Heatmap (Branches)", fontsize=11)
+    ax4.set_xlabel("Coherence", fontsize=10)
+    ax4.set_ylabel("Entropy", fontsize=10)
+    ax4.set_title("Chaos", fontsize=11)
 
     # Add a colorbar specifically for the hexbin to show the chaos range
     cb = fig.colorbar(hb, ax=ax4, label="Mean Hazard (Chaos Score)")
@@ -1837,29 +1835,6 @@ def scan_critical_files(
 
 
 # Helper functions for recommendations
-def _get_friction_recommendation(friction: float, chaos: float, churn: float) -> str:
-    """Generate recommendation based on friction score."""
-    if friction >= 0.30:
-        return (
-            "This file is both highly complex AND frequently modified.\n"
-            "  Priority: URGENT. Consider immediate refactoring or stabilization."
-        )
-    elif friction >= 0.20:
-        return (
-            "This file combines moderate-to-high complexity with active churn.\n"
-            "  Priority: HIGH. Schedule refactoring in next sprint."
-        )
-    elif friction >= 0.10:
-        if chaos > 0.40:
-            return "High complexity but low churn. Monitor for increased activity."
-        elif churn > 0.50:
-            return "High churn but manageable complexity. Ensure good test coverage."
-        else:
-            return "Moderate friction. Monitor for trends."
-    else:
-        return "Low friction. File is either simple, stable, or both. No action needed."
-
-
 def _get_blast_radius_interpretation(blast_radius: int) -> str:
     """Generate interpretation of blast radius."""
     if blast_radius >= 20:

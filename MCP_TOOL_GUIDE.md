@@ -2,7 +2,7 @@
 
 **Server**: `manifold` — Structural Chaos Proxy  
 **Protocol**: Model Context Protocol (MCP)  
-**Tools**: 22
+**Tools**: 20
 
 This is the single comprehensive reference for every tool provided by the Manifold MCP server. Each tool includes its purpose, parameters, expected output, and recommended usage context.
 
@@ -332,7 +332,7 @@ Generate a 4-panel PNG dashboard visualizing chaos dynamics across a file's byte
 1. **Top-left**: Structural trajectory — byte offset vs coherence, colored by chaos
 2. **Top-right**: Chaos vs LLE analog — entropy vs hazard scatter
 3. **Bottom-left**: Time series — hazard, entropy, coherence per window
-4. **Bottom-right**: Symbolic state distribution — LOW / OSCILLATION / HIGH
+4. **Bottom-right**: Chaos Heatmap (Branches) — physical reality of branch hazard
 
 ```
 visualize_manifold_trajectory  (path="mcp_server.py")
@@ -350,7 +350,8 @@ visualize_manifold_trajectory  (path="mcp_server.py")
 
 ---
 
-## 4. Git Integration
+## 4. Git Integration (NEW):
+    • analyze_git_churn    – Git commit frequency and churn metrics
 
 ### `analyze_git_churn`
 
@@ -378,63 +379,7 @@ Churn Score          : 0.600
 
 **Churn score interpretation**: >0.5 = actively modified, <0.2 = stable.
 
----
 
-### `compute_friction_score`
-
-Friction = chaos × churn. Identifies files that are **both complex AND frequently modified**.
-
-| Parameter | Default | Description |
-|---|---|---|
-| `path` | *(required)* | File path relative to repo root |
-
-```
-compute_friction_score  (path="mcp_server.py")
-```
-
-```
-🔥 Friction Analysis for mcp_server.py
-
-Chaos Score  : 0.386
-Churn Score  : 0.600
-Friction     : 0.232
-Risk Level   : HIGH
-
-Recommendation:
-  Priority: HIGH. Schedule refactoring in next sprint.
-```
-
-| Friction | Level | Action |
-|---|---|---|
-| ≥0.30 | CRITICAL | Urgent attention |
-| 0.20–0.29 | HIGH | Refactor soon |
-| 0.10–0.19 | MODERATE | Monitor closely |
-| <0.10 | LOW | Acceptable |
-
----
-
-### `scan_high_friction_files`
-
-Scan the entire repository for files with high friction scores.
-
-| Parameter | Default | Description |
-|---|---|---|
-| `pattern` | `"*.py"` | Glob pattern to filter files |
-| `min_friction` | `0.20` | Minimum friction threshold |
-| `max_files` | `30` | Maximum files to return |
-
-```
-scan_high_friction_files  (pattern="*.py", min_friction=0.1)
-```
-
-```
-🔥 High-Friction Files (Top 2 with friction ≥0.1):
-
-  [    HIGH] 0.232 | mcp_server.py  (chaos=0.386, churn=0.600)
-  [MODERATE] 0.132 | src/manifold/valkey_client.py  (chaos=0.395, churn=0.333)
-```
-
----
 
 ## 5. Dependency & Combined Risk
 
@@ -653,20 +598,18 @@ remove_fact  (fact_id="api_conventions")
 ```
 1. compute_combined_risk    (path="target.py")
 2. analyze_blast_radius     (path="target.py")
-3. compute_friction_score   (path="target.py")
-4. predict_structural_ejection (path="target.py", horizon_days=30)
-5. Decide: refactor now vs later based on risk + timeline
+3. predict_structural_ejection (path="target.py", horizon_days=30)
+4. Decide: refactor now vs later based on risk + timeline
 ```
 
 ### Sprint Planning
 
 ```
-1. scan_high_friction_files  (min_friction=0.15)
-2. scan_critical_files       (min_combined_risk=0.25)
-3. For each candidate:
+1. scan_critical_files       (min_combined_risk=0.25)
+2. For each candidate:
    - analyze_blast_radius (assess impact)
    - analyze_git_churn (assess team velocity)
-4. Select 1–2 files that fit sprint capacity
+3. Select 1–2 files that fit sprint capacity
 ```
 
 ### Finding Implementation Patterns

@@ -72,7 +72,7 @@ compute_combined_risk   (path="target_file.py")
 
 ---
 
-## Tool Reference (22 Tools)
+## Tool Reference (20 Tools)
 
 All tools are documented with parameters, examples, and workflows in **[MCP_TOOL_GUIDE.md](MCP_TOOL_GUIDE.md)**. Quick command reference in **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)**.
 
@@ -104,8 +104,6 @@ All tools are documented with parameters, examples, and workflows in **[MCP_TOOL
 | Tool | Purpose |
 |---|---|
 | `analyze_git_churn` | Commit frequency, lines changed, churn score |
-| `compute_friction_score` | Friction = chaos × churn (complex + frequently modified) |
-| `scan_high_friction_files` | Repository-wide scan for highest friction files |
 
 ### Dependency & Combined Risk
 | Tool | Purpose |
