@@ -21,7 +21,7 @@ from typing import List, Tuple
 # ---------------------------------------------------------------------------
 # Bootstrap – ensure repo root is on sys.path
 # ---------------------------------------------------------------------------
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -80,9 +80,7 @@ FACT_QUERY = "".join(
     ]
 )
 INJECT_FACT_TEXT = (
-    "This is a "
-    + FACT_QUERY
-    + ". "
+    "This is a " + FACT_QUERY + ". "
     "It confirms that the inject_fact tool correctly stores data in Valkey "
     "and that it can be retrieved afterward via get_file."
 )
@@ -294,9 +292,7 @@ def test_inject_fact() -> ToolTestResult:
     )
 
     # Verify Search Code visibility
-    search_resp = srv.search_code(
-        query=FACT_QUERY, max_results=1
-    )
+    search_resp = srv.search_code(query=FACT_QUERY, max_results=1)
     r.assert_check("visible in search_code", "test fact injected" in search_resp)
     r.finalize()
     return r
@@ -309,9 +305,7 @@ def test_remove_fact() -> ToolTestResult:
     r.assert_check("contains '🗑️'", "🗑️" in r.response)
 
     # Validate it no longer shows up
-    search_resp = srv.search_code(
-        query=FACT_QUERY, max_results=1
-    )
+    search_resp = srv.search_code(query=FACT_QUERY, max_results=1)
     r.assert_check("erased from search_code", "No matches found" in search_resp)
     r.finalize()
     return r
@@ -426,7 +420,7 @@ def test_visualize_manifold_trajectory() -> ToolTestResult:
     if png_match:
         from pathlib import Path as _Path
 
-        png_path = _Path(__file__).resolve().parent.parent.parent / png_match.group()
+        png_path = _Path(__file__).resolve().parent.parent / png_match.group()
         r.assert_check("PNG file exists on disk", png_path.exists())
         r.assert_check("PNG file has content", png_path.stat().st_size > 1000)
     else:

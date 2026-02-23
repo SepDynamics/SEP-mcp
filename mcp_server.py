@@ -75,7 +75,7 @@ from pydantic import Field
 # Bootstrap – ensure local project modules are importable
 # ---------------------------------------------------------------------------
 REPO_ROOT = Path(__file__).resolve().parent
-WORKSPACE_ROOT = REPO_ROOT
+WORKSPACE_ROOT = Path.cwd()
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -115,7 +115,7 @@ def _get_valkey():
 
 def _get_ast_analyzer():
     """Get or create the AST dependency analyzer singleton.
-    
+
     The analyzer builds the dependency graph once and caches it.
     Call invalidate_ast_cache() to rebuild (e.g., after file changes).
     """
@@ -131,7 +131,7 @@ def _get_ast_analyzer():
 
 def invalidate_ast_cache():
     """Invalidate the cached AST dependency graph.
-    
+
     Call this when files are created/deleted/renamed to force a rebuild.
     """
     global _ast_analyzer
@@ -207,9 +207,26 @@ EXCLUDE_PATTERNS = {
 # Binary extensions that pass _should_skip but shouldn't be stored as text.
 # Everything else is treated as indexable text (manifold works on raw bytes).
 BINARY_EXTENSIONS = {
-    ".class", ".dll", ".exe", ".bin", ".dat", ".db", ".sqlite",
-    ".pkl", ".pickle", ".npy", ".npz", ".h5", ".hdf5",
-    ".wasm", ".dex", ".ttf", ".otf", ".woff", ".woff2", ".eot",
+    ".class",
+    ".dll",
+    ".exe",
+    ".bin",
+    ".dat",
+    ".db",
+    ".sqlite",
+    ".pkl",
+    ".pickle",
+    ".npy",
+    ".npz",
+    ".h5",
+    ".hdf5",
+    ".wasm",
+    ".dex",
+    ".ttf",
+    ".otf",
+    ".woff",
+    ".woff2",
+    ".eot",
 }
 
 DEFAULT_MAX_BYTES = 512_000  # 512 KB per file cap
@@ -837,7 +854,8 @@ def verify_snippet(
                 continue
             occs = entry.get("occurrences", [])
             filtered_occs = [
-                o for o in occs
+                o
+                for o in occs
                 if isinstance(o, dict) and o.get("doc_id") in matching_docs
             ]
             if filtered_occs:
@@ -1109,9 +1127,13 @@ def inject_fact(
     if not v.ping():
         return "❌ Valkey not reachable."
 
-    rel = os.path.relpath(fact_id, WORKSPACE_ROOT) if os.path.isabs(fact_id) else fact_id
+    rel = (
+        os.path.relpath(fact_id, WORKSPACE_ROOT) if os.path.isabs(fact_id) else fact_id
+    )
     payload = fact_text.encode("utf-8", errors="replace")
-    v.raw_r.hset(f"{FILE_HASH_PREFIX}{rel}".encode("utf-8"), mapping={b"doc": _compress(payload)})
+    v.raw_r.hset(
+        f"{FILE_HASH_PREFIX}{rel}".encode("utf-8"), mapping={b"doc": _compress(payload)}
+    )
     v.r.zadd(FILE_LIST_KEY, {rel: len(payload)})
     v.invalidate_index()
     return f"🚀 Fact '{fact_id}' injected into the Dynamic Semantic Codebook."
@@ -1128,7 +1150,9 @@ def remove_fact(
     if not v.ping():
         return "❌ Valkey not reachable."
 
-    rel = os.path.relpath(fact_id, WORKSPACE_ROOT) if os.path.isabs(fact_id) else fact_id
+    rel = (
+        os.path.relpath(fact_id, WORKSPACE_ROOT) if os.path.isabs(fact_id) else fact_id
+    )
     v.remove_document(rel)
     v.raw_r.delete(f"{FILE_HASH_PREFIX}{rel}".encode("utf-8"))
     v.r.zrem(FILE_LIST_KEY, rel)
@@ -1560,9 +1584,7 @@ def analyze_git_churn(
         if not metrics:
             return f"❌ No Git history found for '{path}'."
 
-        days_since_modified = (
-            datetime.now(timezone.utc) - metrics.last_modified
-        ).days
+        days_since_modified = (datetime.now(timezone.utc) - metrics.last_modified).days
 
         return f"""📈 Git Churn Analysis for {path}
 
@@ -1660,9 +1682,6 @@ def scan_high_friction_files(
         str,
         Field(description="Glob pattern to filter files (e.g. '*.py', 'src/*.cpp')"),
     ] = "*.py",
-    min_friction: Annotated[
-        float, Field(description="Minimum friction score to include (default 0.20)")
-    ] = 0.20,
     max_files: Annotated[
         int, Field(description="Maximum number of files to return (default 30)")
     ] = 30,
@@ -1718,17 +1737,15 @@ def scan_high_friction_files(
 
     # Compute friction scores
     friction_files = analyzer.get_high_friction_files(
-        chaos_data, churn_data, threshold=min_friction
+        chaos_data, churn_data, threshold=0.0
     )
 
     friction_files = friction_files[:max_files]
 
     if not friction_files:
-        return f"No files found with friction ≥{min_friction}."
+        return f"No high-friction files found."
 
-    lines = [
-        f"🔥 High-Friction Files (Top {len(friction_files)} with friction ≥{min_friction}):\n"
-    ]
+    lines = [f"🔥 High-Friction Files (Top {len(friction_files)}):\n"]
     for file_path, friction, risk in friction_files:
         chaos = chaos_data.get(file_path, 0)
         churn = churn_data.get(file_path)
@@ -1754,8 +1771,6 @@ def analyze_blast_radius(
     Shows how many files would be impacted if this file were changed.
     Uses AST analysis to trace import dependencies.
     """
-    from src.manifold.ast_deps import ASTDependencyAnalyzer
-
     path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
 
     try:
@@ -1810,7 +1825,6 @@ def compute_combined_risk(
 
     This is the ultimate metric for identifying the most critical files to refactor.
     """
-    from src.manifold.ast_deps import ASTDependencyAnalyzer
     from src.manifold.git_churn import GitChurnAnalyzer
 
     path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
@@ -1881,9 +1895,6 @@ def scan_critical_files(
         str,
         Field(description="Glob pattern to filter files (e.g. '*.py')"),
     ] = "*.py",
-    min_combined_risk: Annotated[
-        float, Field(description="Minimum combined risk score (default 0.30)")
-    ] = 0.30,
     max_files: Annotated[
         int, Field(description="Maximum files to return (default 20)")
     ] = 20,
@@ -1892,7 +1903,6 @@ def scan_critical_files(
 
     This identifies the most dangerous files in the codebase.
     """
-    from src.manifold.ast_deps import ASTDependencyAnalyzer
     from src.manifold.git_churn import GitChurnAnalyzer
 
     v = _get_valkey()
@@ -1957,23 +1967,20 @@ def scan_critical_files(
             chaos, blast_radius, churn_score
         )
 
-        if combined >= min_combined_risk:
-            critical_files.append((file_path, combined, risk_level, chaos, blast_radius, churn_score))
+        critical_files.append(
+            (file_path, combined, risk_level, chaos, blast_radius, churn_score)
+        )
 
     # Sort by combined risk descending
     critical_files.sort(key=lambda x: x[1], reverse=True)
     critical_files = critical_files[:max_files]
 
     if not critical_files:
-        return f"No files found with combined risk ≥{min_combined_risk}."
+        return f"No critical files found."
 
-    lines = [
-        f"⚠️ Critical Files (Top {len(critical_files)} with risk ≥{min_combined_risk}):\n"
-    ]
+    lines = [f"⚠️ Critical Files (Top {len(critical_files)}):\n"]
     for file_path, combined, risk_level, chaos, blast, churn in critical_files:
-        lines.append(
-            f"  [{risk_level:>8}] {combined:.3f} | {file_path}"
-        )
+        lines.append(f"  [{risk_level:>8}] {combined:.3f} | {file_path}")
         lines.append(
             f"             chaos={chaos:.3f}, blast={blast:>2}, churn={churn:.3f}"
         )
