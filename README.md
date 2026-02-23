@@ -100,7 +100,7 @@ All tools are documented with parameters, examples, and workflows in **[MCP_TOOL
 | `analyze_code_chaos` | Per-file chaos score, entropy, coherence, collapse risk |
 | `batch_chaos_scan` | Rank all files by chaos score (highest risk first) |
 | `predict_structural_ejection` | Forecast when a file becomes unmaintainable |
-| `visualize_manifold_trajectory` | Generate a 4-panel PNG dashboard of chaos dynamics |
+| `visualize_manifold_trajectory` | Generate a 4-panel PNG dashboard of chaos dynamics (incl. 3D Phase Space) |
 | `visualize_manifold_3d.py` | Generate an interactive 3D probability volume scatter plot (C, E, Chaos) |
 
 ### Dependency & Combined Risk

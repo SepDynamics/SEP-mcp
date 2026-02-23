@@ -7,9 +7,6 @@ checking for edge cases, metrics properties, and failure modes.
 
 from __future__ import annotations
 
-import json
-import os
-import shutil
 import time
 from pathlib import Path
 
@@ -164,7 +161,7 @@ def test_search_code():
     # Edge Case: huge payload
     long_query = "x" * 1000
     try:
-        long_res = search_code(query=long_query, max_results=1)
+        search_code(query=long_query, max_results=1)
         assert True
     except Exception:
         pytest.fail("Search should handle large queries gracefully")
@@ -293,7 +290,9 @@ def test_visualize_manifold_trajectory():
     res = visualize_manifold_trajectory("mcp_server.py")
     # Assert successful png return
     assert "4-Panel Manifold Dashboard saved to:" in res
-    assert "Chaos Heatmap" in res  # test that our heatmap modification is acknowledged
+    assert (
+        "Structural Phase Space" in res
+    )  # test that our heatmap modification is acknowledged
 
     # Test file was actually dropped.
     reports_dir = Path("reports")

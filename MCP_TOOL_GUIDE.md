@@ -360,10 +360,10 @@ Generate a 4-panel PNG dashboard visualizing chaos dynamics across a file's byte
 | `path` | *(required)* | File path to visualize |
 
 **Panels**:
-1. **Top-left**: Structural trajectory — byte offset vs coherence, colored by chaos
-2. **Top-right**: Chaos vs LLE analog — entropy vs hazard scatter
-3. **Bottom-left**: Time series — hazard, entropy, coherence per window
-4. **Bottom-right**: Chaos Heatmap (Branches) — physical reality of branch hazard
+1. **Top-left**: Physical Evolution — Byte Offset vs Coherence
+2. **Top-right**: Manifold Attractors — 2D Probability Density (Hexbin) of Entropy vs Hazard
+3. **Bottom-left**: 3D Phase Space Trajectory — Coherence, Entropy, and Hazard colored by Time
+4. **Bottom-right**: Structural Phase Space — Coherence vs Entropy branches colored by Hazard
 
 ```
 visualize_manifold_trajectory  (path="mcp_server.py")

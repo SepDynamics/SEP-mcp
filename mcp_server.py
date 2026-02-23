@@ -110,9 +110,6 @@ def _get_valkey():
     return _valkey_wm
 
 
-from datetime import datetime
-
-
 def _get_ast_analyzer():
     """Get or create the AST dependency analyzer singleton.
 
@@ -1178,6 +1175,65 @@ def remove_fact(
 # ===================================================================
 # CHAOS EXPANSION TOOLS (new in this version)
 # ===================================================================
+def _get_dynamic_thresholds() -> dict[str, float]:
+    """Dynamically compute structural thresholds from current index percentiles."""
+    v = _get_valkey()
+    import numpy as np
+
+    hazards = []
+    coherences = []
+    entropies = []
+
+    for key_bytes in v.raw_r.scan_iter(
+        f"{FILE_HASH_PREFIX}*".encode("utf-8"), count=500
+    ):
+        try:
+            raw_chaos = v.raw_r.hget(key_bytes, b"chaos")
+            if raw_chaos:
+                try:
+                    js_bytes = _decompress(raw_chaos)
+                    js_str = js_bytes.decode("utf-8", errors="replace")
+                except Exception:
+                    js_str = (
+                        raw_chaos.decode("utf-8", errors="replace")
+                        if isinstance(raw_chaos, bytes)
+                        else str(raw_chaos)
+                    )
+                chaos = float(json.loads(js_str).get("chaos_score", 0.0))
+                if chaos > 0.0:
+                    hazards.append(chaos)
+
+            raw_sig = v.raw_r.hget(key_bytes, b"sig")
+            if raw_sig:
+                parts = raw_sig.decode("utf-8", errors="replace").split("_")
+                if len(parts) == 3:
+                    coherences.append(float(parts[0][1:]))
+                    entropies.append(float(parts[2][1:]))
+        except Exception:
+            pass
+
+    res = {
+        "chaos_low": 0.15,
+        "chaos_high": 0.35,
+        "coherence_low": 0.30,
+        "coherence_high": 0.60,
+        "entropy_low": 0.60,
+        "entropy_high": 0.85,
+    }
+
+    if hazards:
+        res["chaos_low"] = float(np.percentile(hazards, 33.3))
+        res["chaos_high"] = float(np.percentile(hazards, 66.6))
+    if coherences:
+        res["coherence_low"] = float(np.percentile(coherences, 33.3))
+        res["coherence_high"] = float(np.percentile(coherences, 66.6))
+    if entropies:
+        res["entropy_low"] = float(np.percentile(entropies, 33.3))
+        res["entropy_high"] = float(np.percentile(entropies, 66.6))
+
+    return res
+
+
 @mcp.tool()
 def analyze_code_chaos(
     path: Annotated[
@@ -1333,10 +1389,14 @@ def predict_structural_ejection(
 
     score = chaos["chaos_score"]
 
-    if score >= 0.35:
-        days = max(1, int((0.5 - score) * 100))
+    thresholds = _get_dynamic_thresholds()
+    chaos_high = thresholds["chaos_high"]
+    chaos_low = thresholds["chaos_low"]
+
+    if score >= chaos_high:
+        days = max(1, int((1.0 - score) * 100))
         return f"⚠️ WARNING: {path} is in PERSISTENT_HIGH state (score: {score:.3f}).\nPredicted structural ejection in ~{days} days without refactoring."
-    elif score >= 0.15:
+    elif score >= chaos_low:
         return f"⚠️ {path} is in OSCILLATION state (score: {score:.3f}).\nMonitor for increasing complexity."
     else:
         return f"✅ {path} is in LOW_FLUCTUATION state (score: {score:.3f}).\nStructurally stable."
@@ -1403,18 +1463,21 @@ def visualize_manifold_trajectory(
 
     # Extract per-window metrics
     n = len(encoded.windows)
-    indices = np.arange(n)
     hazards = np.array([w.hazard for w in encoded.windows])
     entropies = np.array([w.entropy for w in encoded.windows])
     coherences = np.array([w.coherence for w in encoded.windows])
     byte_starts = np.array([w.byte_start for w in encoded.windows])
 
     # Classify symbolic states
+    thresholds = _get_dynamic_thresholds()
+    chaos_high = thresholds["chaos_high"]
+    chaos_low = thresholds["chaos_low"]
+
     states = []
     for h in hazards:
-        if h >= 0.35:
+        if h >= chaos_high:
             states.append("PERSISTENT_HIGH")
-        elif h >= 0.15:
+        elif h >= chaos_low:
             states.append("OSCILLATION")
         else:
             states.append("LOW_FLUCTUATION")
@@ -1432,9 +1495,15 @@ def visualize_manifold_trajectory(
     max_hazard = float(np.max(hazards))
 
     # --- Build 4-panel figure ---
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig = plt.figure(figsize=(14, 10))
+    # We use gridspec or manual add_subplot to mix 2D and 3D axes
+    ax1 = fig.add_subplot(2, 2, 1)  # Top-Left (2D Scatter)
+    ax2 = fig.add_subplot(2, 2, 2)  # Top-Right (2D Hexbin)
+    ax3 = fig.add_subplot(2, 2, 3, projection="3d")  # Bottom-Left (3D Scatter)
+    ax4 = fig.add_subplot(2, 2, 4)  # Bottom-Right (2D Hexbin)
+
     fig.suptitle(
-        f"Structural Manifold Trajectory — {path}\n"
+        f"Structural Manifold Phase Space — {path}\n"
         f"(Windows={n}, Avg Chaos={avg_hazard:.3f}, "
         f"Avg Entropy={avg_entropy:.3f}, Avg Coherence={avg_coherence:.3f})",
         fontsize=13,
@@ -1445,7 +1514,6 @@ def visualize_manifold_trajectory(
     cmap = plt.cm.RdYlGn_r  # Red = high chaos, Green = low
 
     # Panel 1 (top-left): Structural trajectory – byte position vs coherence
-    ax1 = axes[0, 0]
     sc1 = ax1.scatter(
         byte_starts,
         coherences,
@@ -1459,7 +1527,7 @@ def visualize_manifold_trajectory(
     )
     ax1.set_xlabel("Byte Offset", fontsize=10)
     ax1.set_ylabel("Coherence", fontsize=10)
-    ax1.set_title("Physical Reality (colored by chaos score)", fontsize=11)
+    ax1.set_title("Physical Evolution (Byte Offset vs Coherence)", fontsize=11)
     ax1.axhline(
         y=np.mean(coherences),
         color="gray",
@@ -1470,49 +1538,54 @@ def visualize_manifold_trajectory(
     ax1.legend(fontsize=8)
     fig.colorbar(sc1, ax=ax1, label="Hazard (Chaos Score)")
 
-    # Panel 2 (top-right): Chaos vs LLE analog – entropy vs hazard
-    ax2 = axes[0, 1]
-    sc2 = ax2.scatter(
+    # Panel 2 (top-right): Chaos Volumetric Distribution
+    hb2 = ax2.hexbin(
         entropies,
         hazards,
-        c=coherences,
-        cmap="viridis",
-        s=60,
-        edgecolors="k",
-        linewidth=0.5,
+        gridsize=25,
+        cmap="Blues",  # Density map
+        mincnt=1,
+        edgecolors="none",
     )
     ax2.set_xlabel("Entropy", fontsize=10)
     ax2.set_ylabel("Hazard (Chaos Score)", fontsize=10)
-    ax2.set_title("Scatter vs LLE Analog", fontsize=11)
-    ax2.axhline(
-        y=0.35,
-        color="red",
-        linestyle="--",
-        alpha=0.7,
-        label="PERSISTENT_HIGH threshold",
-    )
-    ax2.axhline(
-        y=0.15, color="orange", linestyle="--", alpha=0.7, label="OSCILLATION threshold"
-    )
-    ax2.legend(fontsize=8)
-    fig.colorbar(sc2, ax=ax2, label="Coherence")
+    ax2.set_title("Manifold Attractors (Probability Density)", fontsize=11)
+    cb2 = fig.colorbar(hb2, ax=ax2, label="Window Count (Density)")
+    cb2.ax.tick_params(labelsize=8)
 
-    # Panel 3 (bottom-left): Time series – all three metrics
-    ax3 = axes[1, 0]
-    ax3.plot(
-        indices, hazards, "r-o", markersize=4, linewidth=1.5, label="Hazard (Chaos)"
+    # Panel 3 (bottom-left): 3D Phase Space Trajectory
+    # Plot the temporal evolution in Phase Space
+    sc3 = ax3.scatter(
+        coherences,
+        entropies,
+        hazards,
+        c=byte_starts,  # Color by time/offset
+        cmap="cool",  # Cyan/Magenta conveys temporal progression well
+        s=30,
+        alpha=0.8,
+        edgecolors="k",
+        linewidth=0.2,
     )
-    ax3.plot(indices, entropies, "b-s", markersize=4, linewidth=1.5, label="Entropy")
-    ax3.plot(indices, coherences, "g-^", markersize=4, linewidth=1.5, label="Coherence")
-    ax3.axhline(y=0.35, color="red", linestyle=":", alpha=0.5)
-    ax3.set_xlabel("Window Index", fontsize=10)
-    ax3.set_ylabel("Metric Value", fontsize=10)
-    ax3.set_title("Time Series (per window)", fontsize=11)
-    ax3.legend(fontsize=8)
-    ax3.set_ylim(-0.05, 1.05)
+    # Add a thin line to connect the dots in chronological order
+    ax3.plot(
+        coherences,
+        entropies,
+        hazards,
+        color="gray",
+        linewidth=0.5,
+        alpha=0.5,
+    )
+    ax3.set_xlabel("Coherence (C)", fontsize=9)
+    ax3.set_ylabel("Entropy (E)", fontsize=9)
+    ax3.set_zlabel("Hazard (Z)", fontsize=9)
+    ax3.set_title("3D Phase Space Trajectory (Time-colored)", fontsize=11)
+
+    # Adjust 3D pane viewing angle slightly for better visibility
+    ax3.view_init(elev=20, azim=45)
+    cb3 = fig.colorbar(sc3, ax=ax3, label="Time (Byte Offset)", pad=0.1)
+    cb3.ax.tick_params(labelsize=8)
 
     # Panel 4 (bottom-right): Heatmap of Coherence vs Entropy colored by Chaos
-    ax4 = axes[1, 1]
     # Create a hexbin plot: x=coherence, y=entropy, color=hazard
     hb = ax4.hexbin(
         coherences,
@@ -1544,7 +1617,9 @@ def visualize_manifold_trajectory(
 
     # Build text summary
     collapse_risk = (
-        "HIGH" if avg_hazard >= 0.35 else "MODERATE" if avg_hazard >= 0.15 else "LOW"
+        "HIGH"
+        if avg_hazard >= chaos_high
+        else "MODERATE" if avg_hazard >= chaos_low else "LOW"
     )
 
     return (
@@ -1561,10 +1636,10 @@ def visualize_manifold_trajectory(
         f"    OSCILLATION       : {state_counts['OSCILLATION']}\n"
         f"    PERSISTENT_HIGH   : {state_counts['PERSISTENT_HIGH']}\n\n"
         f"  Dashboard panels:\n"
-        f"    1. Structural trajectory (byte offset vs coherence, colored by chaos)\n"
-        f"    2. Chaos vs LLE analog (entropy vs hazard scatter)\n"
-        f"    3. Time series (hazard/entropy/coherence per window)\n"
-        f"    4. Chaos Heatmap (Coherence vs Entropy branches colored by Hazard)"
+        f"    1. Physical Evolution (Byte Offset vs Coherence)\n"
+        f"    2. Manifold Attractors (2D Probability Density: Entropy vs Hazard)\n"
+        f"    3. 3D Phase Space Trajectory (C, E, Hazard colored by Time)\n"
+        f"    4. Structural Phase Space (Coherence vs Entropy branches colored by Hazard)"
     )
 
 
@@ -1675,6 +1750,13 @@ def cluster_codebase_structure(
     output = [f"🧠 Structural Codebase Clusters (k={k}, files={n_samples})"]
     output.append(f"Matching pattern: '{pattern}'\n")
 
+    thresholds = _get_dynamic_thresholds()
+    chaos_high = thresholds["chaos_high"]
+    coherence_high = thresholds["coherence_high"]
+    coherence_low = thresholds["coherence_low"]
+    entropy_high = thresholds["entropy_high"]
+    entropy_low = thresholds["entropy_low"]
+
     for clus_id in range(k):
         members = clusters[clus_id]
         if not members:
@@ -1700,13 +1782,13 @@ def cluster_codebase_structure(
         top_dir = f"[{dir_counts.most_common(1)[0][0]}] " if dir_counts else ""
 
         # Attempt to label the cluster heuristically based on the feature space
-        if avg_chaos > 0.35:
+        if avg_chaos > chaos_high:
             label = f"{top_dir}{top_ext}HIGH-CHAOS (Complex/Unstable)"
-        elif avg_e > 0.85 and avg_c < 0.30:
+        elif avg_e > entropy_high and avg_c < coherence_low:
             label = f"{top_dir}{top_ext}DENSE/ENTROPIC (Data Algorithms/Math)"
-        elif avg_e < 0.60:
+        elif avg_e < entropy_low:
             label = f"{top_dir}{top_ext}SPARSE (Boilerplate/Configs)"
-        elif avg_c > 0.60:
+        elif avg_c > coherence_high:
             label = f"{top_dir}{top_ext}HIGH-COHERENCE (Linear/Simple)"
         else:
             label = f"{top_dir}{top_ext}MIXED-FLUCTUATION (Standard Code)"
@@ -1981,7 +2063,7 @@ def _get_combined_risk_recommendation(
     elif combined >= 0.20:
         return (
             "MODERATE RISK. Monitor this file closely.\n"
-            f"  • Complexity: {chaos:.2f}, Blast radius: {blast_radius}, Churn: {churn:.2f}\n"
+            f"  • Complexity: {chaos:.2f}, Blast radius: {blast_radius}\n"
             "  Action: Add to technical debt backlog.\n"
             "  Consider: Improve documentation and test coverage."
         )
