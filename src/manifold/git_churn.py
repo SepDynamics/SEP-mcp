@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -88,7 +88,7 @@ class GitChurnAnalyzer:
 
         # Get recent commits (last 90 days)
         ninety_days_ago = (
-            datetime.now() - timedelta(days=90)
+            datetime.now(timezone.utc) - timedelta(days=90)
         ).strftime("%Y-%m-%d")
         try:
             recent_result = subprocess.run(
@@ -133,7 +133,7 @@ class GitChurnAnalyzer:
             last_modified_str = last_commit_result.stdout.strip()
             last_modified = datetime.fromisoformat(last_modified_str)
         except (subprocess.CalledProcessError, ValueError):
-            last_modified = datetime.now()
+            last_modified = datetime.now(timezone.utc)
 
         # Get file age (first commit date, using %cI for strict ISO 8601)
         try:
@@ -154,7 +154,7 @@ class GitChurnAnalyzer:
             )
             first_commit_str = first_commit_result.stdout.strip().split("\n")[0]
             first_commit = datetime.fromisoformat(first_commit_str)
-            age_days = (datetime.now() - first_commit).days
+            age_days = (datetime.now(timezone.utc) - first_commit).days
         except (subprocess.CalledProcessError, ValueError, IndexError):
             age_days = 0
 
@@ -299,7 +299,7 @@ class GitChurnAnalyzer:
             "last_commit": None,
         })
 
-        ninety_days_ago = datetime.now() - timedelta(days=90)
+        ninety_days_ago = datetime.now(timezone.utc) - timedelta(days=90)
         current_commit_date = None
         current_commit_author = None
 
@@ -355,7 +355,7 @@ class GitChurnAnalyzer:
 
         # Convert to ChurnMetrics objects
         churn_data = {}
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         for file_path, data in commit_data.items():
             if data["total_commits"] == 0:
