@@ -90,7 +90,7 @@ A >99% structural VRAM optimization maintaining total retrieval speeds matching 
 
 ### Core MCP Tools Available
 
-The server provides 16 robust tools explicitly built for codebase navigation and pathology:
+The server provides 16 robust tools explicitly built for codebase navigation and pathology. For detailed usage instructions, examples, and workflows, see **[MCP_TOOL_GUIDE.md](MCP_TOOL_GUIDE.md)**.
 
 #### Workspace Indexing & Watching
 - **`ingest_repo`**: Initializes the codebase index (text + structural metrics).
@@ -113,3 +113,24 @@ The server provides 16 robust tools explicitly built for codebase navigation and
 - **`inject_fact`**: Force rule-sets or architectural realities permanently into the context codebook.
 - **`remove_fact`**: Clean up localized memory traces.
 - **`verify_snippet`**: Cross-validate new blocks of AI-generated code against established codebase paradigms.
+
+---
+
+## Quick Start Workflow
+
+```
+# 1. Index your repository
+mcp--manifold--ingest_repo (root_dir=".", clear_first=true, compute_chaos=true)
+
+# 2. Verify indexing
+mcp--manifold--get_index_stats
+
+# 3. Identify complexity hotspots
+mcp--manifold--batch_chaos_scan (pattern="*.py", max_files=30)
+
+# 4. Analyze specific high-risk files
+mcp--manifold--analyze_code_chaos (path="your_file.py")
+mcp--manifold--visualize_manifold_trajectory (path="your_file.py")
+```
+
+**📚 For comprehensive tool documentation, workflows, and best practices**: [MCP_TOOL_GUIDE.md](MCP_TOOL_GUIDE.md)

@@ -26,10 +26,14 @@ Tools exposed (merged from prototype + chaos expansion):
   • search_by_structure  – find structurally similar files
   • start_watcher        – live filesystem watcher for IDE saves
   • inject_fact          – zero-shot fact injection into codebook
+  • remove_fact          – remove injected facts from codebook
   • analyze_code_chaos   – full ChaosResult per file
   • batch_chaos_scan     – GPU-style batch validation
   • predict_structural_ejection – maintainability forecast
   • visualize_manifold_trajectory – 4-panel dashboard
+
+For comprehensive usage guide and workflows, see: MCP_TOOL_GUIDE.md
+For quick start, see: README.md
 """
 
 from __future__ import annotations
