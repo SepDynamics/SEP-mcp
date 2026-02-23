@@ -10,7 +10,7 @@ A Model Context Protocol server that gives AI coding assistants high-speed, stru
 |---|---|
 | **Structural Indexing** | Scans every file into a Valkey-backed grid with compressed signatures and chaos profiles. Sub-millisecond retrieval. |
 | **Chaos Detection** | Calculates a `chaos_score` per file using a 3-body gravitational ejection proxy. Predicts which files will become unmaintainable. |
-| **Dependency & Risk Analysis** | Traces import graphs via AST parsing, measures blast radius, combines chaos × churn × blast into a single risk score. |
+| **Dependency & Risk Analysis** | Traces import graphs via AST parsing, measures blast radius, combines chaos × blast into a single risk score. |
 | **Working Memory** | Inject persistent facts (project conventions, architecture rules) into a Dynamic Semantic Codebook for zero-shot learning. |
 | **Real-Time Sync** | Filesystem watcher auto-ingests file saves in milliseconds, keeping the index current without manual re-scans. |
 
@@ -23,6 +23,7 @@ A Model Context Protocol server that gives AI coding assistants high-speed, stru
 - Python 3.10+
 - Valkey (or Redis) running on `localhost:6379`
 - C++20 compiler (for building the native structural engine)
+- `faiss-cpu` (required for running the `cluster_codebase_structure` tool)
 
 ### Setup
 
@@ -100,17 +101,13 @@ All tools are documented with parameters, examples, and workflows in **[MCP_TOOL
 | `batch_chaos_scan` | Rank all files by chaos score (highest risk first) |
 | `predict_structural_ejection` | Forecast when a file becomes unmaintainable |
 | `visualize_manifold_trajectory` | Generate a 4-panel PNG dashboard of chaos dynamics |
-
-### Git Integration
-| Tool | Purpose |
-|---|---|
-| `analyze_git_churn` | Commit frequency, lines changed, churn score |
+| `visualize_manifold_3d.py` | Generate an interactive 3D probability volume scatter plot (C, E, Chaos) |
 
 ### Dependency & Combined Risk
 | Tool | Purpose |
 |---|---|
 | `analyze_blast_radius` | Import dependency tree and impact file count |
-| `compute_combined_risk` | Combined risk = 0.4×chaos + 0.3×blast + 0.3×churn |
+| `compute_combined_risk` | Combined risk = 0.6×chaos + 0.4×blast |
 | `scan_critical_files` | Repository-wide scan for highest combined risk |
 
 ### Verification & Memory

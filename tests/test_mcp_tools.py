@@ -319,14 +319,15 @@ def test_compute_combined_risk():
     res = compute_combined_risk("mcp_server.py")
     assert "Combined Risk Analysis" in res
     assert "Risk Level" in res
+    assert "Formula" in res
 
 
 def test_scan_critical_files():
     res = scan_critical_files(pattern="*.py", max_files=5)
     # The string must reflect scanning the files and output
     assert (
-        "Crisis Management Strategy" in res
-        or "Critical Risk Files" in res
+        "No critical files found" in res
+        or "Critical Files" in res
         or "mcp_server.py" in res
     )
 
@@ -344,6 +345,17 @@ def test_start_watcher_and_cli_updates():
     test_file = test_dir / "temp_file.py"
 
     try:
+        # Edge case: non-existent dir
+        bad_watch_res = start_watcher(
+            watch_dir="non_existent_fake_dir", max_bytes_per_file=1024
+        )
+        assert (
+            "not found" in bad_watch_res.lower()
+            or "does not exist" in bad_watch_res.lower()
+            or "not a directory" in bad_watch_res.lower()
+            or "❌" in bad_watch_res
+        )
+
         # 1. Start Watcher
         watch_res = start_watcher(watch_dir=str(test_dir), max_bytes_per_file=1024)
         assert "started" in watch_res.lower() or "already" in watch_res.lower()
@@ -356,7 +368,7 @@ def test_start_watcher_and_cli_updates():
         stats = get_index_stats()
         assert "temp_file.py" in str(stats) or "Total Valkey keys" in str(stats)
 
-        # 4. Trigger delete (indirectly handled by observer, but python doesn't crash)
+        # 4. Trigger delete
         test_file.unlink()
         time.sleep(0.5)
 

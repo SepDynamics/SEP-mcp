@@ -2,7 +2,7 @@
 
 **Server**: `manifold` — Structural Chaos Proxy  
 **Protocol**: Model Context Protocol (MCP)  
-**Tools**: 21
+**Tools**: 20
 
 This is the single comprehensive reference for every tool provided by the Manifold MCP server. Each tool includes its purpose, parameters, expected output, and recommended usage context.
 
@@ -14,13 +14,12 @@ This is the single comprehensive reference for every tool provided by the Manifo
 2. [Indexing & Monitoring](#1-indexing--monitoring)
 3. [File Discovery & Search](#2-file-discovery--search)
 4. [Chaos Analysis](#3-chaos-analysis)
-5. [Git Integration](#4-git-integration)
-6. [Dependency & Combined Risk](#5-dependency--combined-risk)
-7. [Verification & Memory](#6-verification--memory)
-8. [Workflows](#workflows)
-9. [Interpreting Results](#interpreting-results)
-10. [Best Practices](#best-practices)
-11. [Troubleshooting](#troubleshooting)
+5. [Dependency & Combined Risk](#5-dependency--combined-risk)
+6. [Verification & Memory](#6-verification--memory)
+7. [Workflows](#workflows)
+8. [Interpreting Results](#interpreting-results)
+9. [Best Practices](#best-practices)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -213,9 +212,9 @@ get_file_signature  (path="mcp_server.py")
 ```
 
 **Signature format**: `c{coherence}_s{stability}_e{entropy}`
-- **c** (Coherence): Structural consistency (0–1)
+- **c** (Coherence): Structural consistency (0–1). High values (>0.45) indicate uniform repetitive scaffolding (like auto-migrations). Low values (<0.25) indicate erratic, non-repetitive cyclomatic density (the "brain" of the app).
 - **s** (Stability): Rate of structural change (0–1)
-- **e** (Entropy): Information density (0–1)
+- **e** (Entropy): Information density (0–1). Higher means dense, text-heavy algorithms; lower means sparse or structural formatting.
 
 ---
 
@@ -247,6 +246,8 @@ Files structurally similar to c0.213_s0.000_e0.928 (±0.1):
 ### `cluster_codebase_structure`
 
 Automatically dump the mathematical "obscure file groupings" seen on the Coherence vs Entropy Heatmap (Chart 4) into discrete, physically clustered lists of files. 
+
+*(Note: This tool requires `faiss-cpu` to be installed: `pip install faiss-cpu`)* 
 
 | Parameter | Default | Description |
 |---|---|---|
@@ -378,39 +379,6 @@ visualize_manifold_trajectory  (path="mcp_server.py")
     PERSISTENT_HIGH   : 21
 ```
 
----
-
-## 4. Git Integration (NEW):
-    • analyze_git_churn    – Git commit frequency and churn metrics
-
-### `analyze_git_churn`
-
-Analyze Git commit history for a specific file: commit frequency, lines changed, and churn score.
-
-| Parameter | Default | Description |
-|---|---|---|
-| `path` | *(required)* | File path relative to repo root |
-| `days_back` | `365` | Number of days of history to analyze |
-
-```
-analyze_git_churn  (path="mcp_server.py")
-```
-
-```
-📈 Git Churn Analysis for mcp_server.py
-
-Total Commits        : 9
-Recent Commits (90d) : 9
-Commits/Month        : 9.00
-Lines Added (total)  : 2,465
-Lines Deleted (total): 386
-Churn Score          : 0.600
-```
-
-**Churn score interpretation**: >0.5 = actively modified, <0.2 = stable.
-
-
-
 ## 5. Dependency & Combined Risk
 
 ### `analyze_blast_radius`
@@ -457,7 +425,7 @@ Dependency Tree (2 levels):
 
 ### `compute_combined_risk`
 
-The most comprehensive risk metric: `0.4×chaos + 0.3×blast + 0.3×churn`.
+The most comprehensive risk metric: `0.6×chaos + 0.4×blast`.
 
 | Parameter | Default | Description |
 |---|---|---|
@@ -473,13 +441,12 @@ compute_combined_risk  (path="src/manifold/sidecar.py")
 Components:
   Chaos Score      : 0.408 (HIGH complexity)
   Blast Radius     : 17 files
-  Churn Score      : 0.133
 
-Combined Risk Score: 0.305
+Combined Risk Score: 0.380
 Risk Level         : HIGH
 
 Formula:
-  combined = 0.4 × 0.408 + 0.3 × 0.340 + 0.3 × 0.133 = 0.305
+  combined = 0.6 × 0.408 + 0.4 × 0.340 = 0.380
 ```
 
 | Combined Risk | Level | Action |
@@ -493,7 +460,9 @@ Formula:
 
 ### `scan_critical_files`
 
-Repository-wide scan for the highest combined risk files.
+Repository-wide scan for the highest combined risk files. 
+
+**Performance Note**: Unlike `batch_chaos_scan` which runs in continuous O(1) time simply by reading memory, this tool computes AST logic and full Git history. On massive repositories (>10,000 files), this introduces severe $O(N)$ execution bottlenecks. Use the high-speed chaos scanner first before falling back to full critical scans.
 
 | Parameter | Default | Description |
 |---|---|---|
@@ -506,14 +475,14 @@ scan_critical_files  (pattern="*.py", min_combined_risk=0.20)
 ```
 
 ```
-⚠️ Critical Files (Top 7 with risk ≥0.20):
+⚠️ Critical Files (Top 3 with risk ≥0.20):
 
   [    HIGH] 0.370 | mcp_server.py
-             chaos=0.386, blast= 6, churn=0.600
+             chaos=0.386, blast= 6
   [    HIGH] 0.342 | src/manifold/valkey_client.py
-             chaos=0.395, blast=14, churn=0.333
+             chaos=0.395, blast=14
   [    HIGH] 0.305 | src/manifold/sidecar.py
-             chaos=0.408, blast=17, churn=0.133
+             chaos=0.408, blast=17
   ...
 ```
 
@@ -638,7 +607,6 @@ remove_fact  (fact_id="api_conventions")
 1. scan_critical_files       (min_combined_risk=0.25)
 2. For each candidate:
    - analyze_blast_radius (assess impact)
-   - analyze_git_churn (assess team velocity)
 3. Select 1–2 files that fit sprint capacity
 ```
 
@@ -713,7 +681,7 @@ Files transition between three structural states:
 
 ### Analysis
 - Run `batch_chaos_scan` as the first analysis step
-- Use `scan_critical_files` for comprehensive prioritization (chaos + blast + churn)
+- Use `scan_critical_files` for comprehensive prioritization (chaos + blast)
 - Generate visualizations for files you plan to refactor
 
 ### Working Memory
@@ -743,10 +711,6 @@ ingest_repo  (root_dir=".", clear_first=true)
 ### Could not compute chaos
 
 File is too short (<512 bytes) or the native encoder is unavailable. Check `get_index_stats` for `Encoder available: True`.
-
-### Not a valid Git repository
-
-Git churn tools require a Git repo. Churn-dependent features degrade gracefully (churn_score = 0) without Git.
 
 ### High chaos scores everywhere
 

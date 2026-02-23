@@ -40,9 +40,9 @@ Tools exposed (20 total):
   Git Integration (NEW):
     • analyze_git_churn    – Git commit frequency and churn metrics
 
-  Dependency Analysis (NEW):
+  Dependency Analysis:
     • analyze_blast_radius – AST-based impact analysis
-    • compute_combined_risk – chaos × blast_radius × churn
+    • compute_combined_risk – chaos × blast_radius ultimate risk
     • scan_critical_files  – ultimate risk assessment
 
   Working Memory:
@@ -62,7 +62,6 @@ import re
 import sys
 import time
 import zstandard as zstd
-from datetime import datetime, timezone
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Annotated, Dict, List, Optional
@@ -73,7 +72,7 @@ from pydantic import Field
 # Bootstrap – ensure local project modules are importable
 # ---------------------------------------------------------------------------
 REPO_ROOT = Path(__file__).resolve().parent
-WORKSPACE_ROOT = Path.cwd()
+WORKSPACE_ROOT = Path(os.environ.get("MANIFOLD_WORKSPACE_ROOT", Path.cwd()))
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -109,6 +108,9 @@ def _get_valkey():
 
         _valkey_wm = ValkeyWorkingMemory()
     return _valkey_wm
+
+
+from datetime import datetime
 
 
 def _get_ast_analyzer():
@@ -367,7 +369,19 @@ def ingest_repo(
     if not v.ping():
         return "❌ Valkey not reachable on localhost:6379."
 
-    target = WORKSPACE_ROOT / root_dir
+    if os.path.isabs(root_dir):
+        try:
+            # Try to make it relative to the workspace, otherwise use as-is but warn
+            rel = os.path.relpath(root_dir, WORKSPACE_ROOT)
+            if rel.startswith("..") and not root_dir.startswith(str(WORKSPACE_ROOT)):
+                target = Path(root_dir)
+            else:
+                target = WORKSPACE_ROOT / rel
+        except ValueError:
+            target = Path(root_dir)
+    else:
+        target = WORKSPACE_ROOT / root_dir
+
     if not target.exists():
         return f"❌ Directory not found: {target}"
 
@@ -611,10 +625,13 @@ def search_code(
             break
 
     if not results:
-        return f"No matches found for '{query}' (scanned {scanned} files, pattern='{file_pattern}')."
+        return f"No matches found for '{query}'."
 
-    header = f"Found {len(results)} file(s) matching '{query}' (scanned {scanned}):\n\n"
-    return header + "\n\n".join(results)
+    output = [
+        f"🔍 Found {len(results)} file(s) matching '{query}' (scanned {scanned}):\n"
+    ]
+    output.extend(results)
+    return "\n".join(output)
 
 
 # ===================================================================
@@ -1611,7 +1628,20 @@ def cluster_codebase_structure(
 
             chaos = 0.0
             if raw_chaos:
-                chaos = float(raw_chaos.decode("utf-8", errors="replace"))
+                try:
+                    js_bytes = _decompress(raw_chaos)
+                    js = js_bytes.decode("utf-8", errors="replace")
+                except Exception:
+                    js = (
+                        raw_chaos.decode("utf-8", errors="replace")
+                        if isinstance(raw_chaos, bytes)
+                        else str(raw_chaos)
+                    )
+                try:
+                    chaos_data = json.loads(js)
+                    chaos = float(chaos_data.get("chaos_score", 0.0))
+                except json.JSONDecodeError:
+                    pass
 
             # We cluster primarily on Coherence and Entropy (matching the 4th chart)
             vectors.append([c, e])
@@ -1657,17 +1687,29 @@ def cluster_codebase_structure(
         avg_e = np.mean([m[3] for m in members])
         avg_chaos = np.mean([m[4] for m in members])
 
+        # Extract dominant file extensions and directories for heuristic labeling
+        import collections
+
+        extensions = [Path(m[0]).suffix for m in members if Path(m[0]).suffix]
+        dirs = [Path(m[0]).parent.name for m in members if Path(m[0]).parent.name]
+
+        ext_counts = collections.Counter(extensions)
+        dir_counts = collections.Counter(dirs)
+
+        top_ext = f"({ext_counts.most_common(1)[0][0]}) " if ext_counts else ""
+        top_dir = f"[{dir_counts.most_common(1)[0][0]}] " if dir_counts else ""
+
         # Attempt to label the cluster heuristically based on the feature space
         if avg_chaos > 0.35:
-            label = "HIGH-CHAOS (Complex/Unstable)"
+            label = f"{top_dir}{top_ext}HIGH-CHAOS (Complex/Unstable)"
         elif avg_e > 0.85 and avg_c < 0.30:
-            label = "DENSE/ENTROPIC (Data Algorithms/Math)"
+            label = f"{top_dir}{top_ext}DENSE/ENTROPIC (Data Algorithms/Math)"
         elif avg_e < 0.60:
-            label = "SPARSE (Boilerplate/Configs)"
+            label = f"{top_dir}{top_ext}SPARSE (Boilerplate/Configs)"
         elif avg_c > 0.60:
-            label = "HIGH-COHERENCE (Linear/Simple)"
+            label = f"{top_dir}{top_ext}HIGH-COHERENCE (Linear/Simple)"
         else:
-            label = "MIXED-FLUCTUATION (Standard Code)"
+            label = f"{top_dir}{top_ext}MIXED-FLUCTUATION (Standard Code)"
 
         output.append(f"=== Cluster {clus_id + 1}: {label} ===")
         output.append(
@@ -1684,60 +1726,6 @@ def cluster_codebase_structure(
         output.append("")
 
     return "\n".join(output)
-
-
-# ===================================================================
-# TOOL: analyze_git_churn
-# ===================================================================
-@mcp.tool()
-def analyze_git_churn(
-    path: Annotated[
-        str,
-        Field(description="File path relative to repo root (e.g. 'mcp_server.py')"),
-    ],
-    days_back: Annotated[
-        int, Field(description="Number of days to analyze (default 365)")
-    ] = 365,
-) -> str:
-    """Analyze Git churn for a specific file.
-
-    Returns commit frequency, recent activity, and churn score.
-    Helps identify files that are frequently modified (high maintenance burden).
-    """
-    from src.manifold.git_churn import GitChurnAnalyzer
-
-    path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
-
-    try:
-        analyzer = GitChurnAnalyzer(WORKSPACE_ROOT)
-        metrics = analyzer.get_file_churn(path, days_back)
-
-        if not metrics:
-            return f"❌ No Git history found for '{path}'."
-
-        days_since_modified = (datetime.now(timezone.utc) - metrics.last_modified).days
-
-        return f"""📈 Git Churn Analysis for {path}
-
-Total Commits        : {metrics.total_commits}
-Recent Commits (90d) : {metrics.recent_commits}
-Commits/Month        : {metrics.commits_per_month:.2f}
-Unique Authors       : {metrics.unique_authors}
-Lines Added (total)  : {metrics.lines_added:,}
-Lines Deleted (total): {metrics.lines_deleted:,}
-File Age (days)      : {metrics.age_days}
-Days Since Modified  : {days_since_modified}
-Churn Score          : {metrics.churn_score:.3f}
-
-Interpretation:
-  - Churn score combines recent activity with commit frequency
-  - Higher churn (>0.5) = actively modified file
-  - Lower churn (<0.2) = stable file
-"""
-    except ValueError as e:
-        return f"❌ {str(e)}"
-    except Exception as e:
-        return f"❌ Error analyzing churn: {str(e)}"
 
 
 @mcp.tool()
@@ -1802,12 +1790,10 @@ def compute_combined_risk(
         Field(description="File path relative to repo root"),
     ],
 ) -> str:
-    """Compute combined risk score = chaos × blast_radius × churn.
+    """Compute combined risk score = chaos × blast_radius.
 
     This is the ultimate metric for identifying the most critical files to refactor.
     """
-    from src.manifold.git_churn import GitChurnAnalyzer
-
     path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
 
     # Get chaos score
@@ -1831,17 +1817,9 @@ def compute_combined_risk(
     except Exception:
         blast_radius = 0
 
-    # Get churn score
-    try:
-        churn_analyzer = GitChurnAnalyzer(WORKSPACE_ROOT)
-        churn_metrics = churn_analyzer.get_file_churn(path)
-        churn_score = churn_metrics.churn_score if churn_metrics else 0
-    except Exception:
-        churn_score = 0
-
     # Compute combined risk
     combined, risk_level = dep_analyzer.compute_combined_score(
-        chaos_score, blast_radius, churn_score
+        chaos_score, blast_radius
     )
 
     return f"""⚠️ Combined Risk Analysis for {path}
@@ -1849,14 +1827,13 @@ def compute_combined_risk(
 Components:
   Chaos Score      : {chaos_score:.3f} ({chaos_data['collapse_risk']} complexity)
   Blast Radius     : {blast_radius} files
-  Churn Score      : {churn_score:.3f}
 
 Combined Risk Score: {combined:.3f}
 Risk Level         : {risk_level}
 
 Formula:
-  combined = 0.4 × chaos + 0.3 × blast + 0.3 × churn
-  combined = 0.4 × {chaos_score:.3f} + 0.3 × {blast_radius/50:.3f} + 0.3 × {churn_score:.3f}
+  combined = 0.6 × chaos + 0.4 × blast_radius
+  combined = 0.6 × {chaos_score:.3f} + 0.4 × {blast_radius/50:.3f}
   combined = {combined:.3f}
 
 Risk Levels:
@@ -1866,7 +1843,7 @@ Risk Levels:
   [LOW]      <0.20 : Acceptable risk
 
 Recommendation:
-  {_get_combined_risk_recommendation(combined, chaos_score, blast_radius, churn_score)}
+  {_get_combined_risk_recommendation(combined, chaos_score, blast_radius)}
 """
 
 
@@ -1880,12 +1857,10 @@ def scan_critical_files(
         int, Field(description="Maximum files to return (default 20)")
     ] = 20,
 ) -> str:
-    """Scan for critical files with high combined risk (chaos × blast_radius × churn).
+    """Scan for critical files with high combined risk (chaos × blast_radius).
 
     This identifies the most dangerous files in the codebase.
     """
-    from src.manifold.git_churn import GitChurnAnalyzer
-
     v = _get_valkey()
     if not v.ping():
         return "❌ Valkey not reachable."
@@ -1928,43 +1903,31 @@ def scan_critical_files(
     except Exception as e:
         return f"❌ Error analyzing dependencies: {str(e)}"
 
-    # Get churn data
-    try:
-        churn_analyzer = GitChurnAnalyzer(WORKSPACE_ROOT)
-        churn_data = churn_analyzer.get_repo_churn(file_pattern=pattern)
-    except ValueError:
-        churn_data = {}  # Not a Git repo
+    # Sort by chaos first (chaos is ~60% of score)
+    sorted_chaos = sorted(chaos_data.items(), key=lambda x: x[1], reverse=True)
+    candidate_list = sorted_chaos[: max_files * 5]  # Top candidates based on chaos
 
     # Compute combined risks
     critical_files = []
-    for file_path in chaos_data:
-        chaos = chaos_data[file_path]
+    for file_path, chaos in candidate_list:
         dep_info = dep_analyzer.get_dependency_info(file_path)
         blast_radius = dep_info.blast_radius if dep_info else 0
-        churn_metrics = churn_data.get(file_path)
-        churn_score = churn_metrics.churn_score if churn_metrics else 0
 
-        combined, risk_level = dep_analyzer.compute_combined_score(
-            chaos, blast_radius, churn_score
-        )
+        combined, risk_level = dep_analyzer.compute_combined_score(chaos, blast_radius)
 
-        critical_files.append(
-            (file_path, combined, risk_level, chaos, blast_radius, churn_score)
-        )
+        critical_files.append((file_path, combined, risk_level, chaos, blast_radius))
 
     # Sort by combined risk descending
     critical_files.sort(key=lambda x: x[1], reverse=True)
     critical_files = critical_files[:max_files]
 
     if not critical_files:
-        return f"No critical files found."
+        return "No critical files found."
 
     lines = [f"⚠️ Critical Files (Top {len(critical_files)}):\n"]
-    for file_path, combined, risk_level, chaos, blast, churn in critical_files:
+    for file_path, combined, risk_level, chaos, blast in critical_files:
         lines.append(f"  [{risk_level:>8}] {combined:.3f} | {file_path}")
-        lines.append(
-            f"             chaos={chaos:.3f}, blast={blast:>2}, churn={churn:.3f}"
-        )
+        lines.append(f"             chaos={chaos:.3f}, blast={blast:>2}")
 
     return "\n".join(lines)
 
@@ -1998,20 +1961,20 @@ def _get_blast_radius_interpretation(blast_radius: int) -> str:
 
 
 def _get_combined_risk_recommendation(
-    combined: float, chaos: float, blast_radius: int, churn: float
+    combined: float, chaos: float, blast_radius: int
 ) -> str:
     """Generate recommendation based on combined risk."""
     if combined >= 0.40:
         return (
             "CRITICAL RISK. This file represents a severe technical debt hotspot.\n"
-            f"  • Complex ({chaos:.2f}) + Wide impact ({blast_radius} files) + Active churn ({churn:.2f})\n"
+            f"  • Complex ({chaos:.2f}) + Wide impact ({blast_radius} files)\n"
             "  Action: Immediate refactoring session. Break into smaller modules.\n"
             "  Consider: Feature freeze until stabilization complete."
         )
     elif combined >= 0.30:
         return (
             "HIGH RISK. This file needs attention soon.\n"
-            f"  • Complexity: {chaos:.2f}, Blast radius: {blast_radius}, Churn: {churn:.2f}\n"
+            f"  • Complexity: {chaos:.2f}, Blast radius: {blast_radius}\n"
             "  Action: Schedule refactoring in current/next sprint.\n"
             "  Consider: Add comprehensive tests before refactoring."
         )

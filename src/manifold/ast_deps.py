@@ -93,10 +93,20 @@ class ASTDependencyAnalyzer:
 
     # Directories to skip during AST scanning (venvs, caches, build dirs)
     SKIP_DIRS = {
-        ".venv", "venv", ".env", "env",
-        "node_modules", "__pycache__", ".git",
-        ".tox", ".mypy_cache", ".pytest_cache",
-        "build", "dist", ".eggs", "*.egg-info",
+        ".venv",
+        "venv",
+        ".env",
+        "env",
+        "node_modules",
+        "__pycache__",
+        ".git",
+        ".tox",
+        ".mypy_cache",
+        ".pytest_cache",
+        "build",
+        "dist",
+        ".eggs",
+        "*.egg-info",
         "site-packages",
     }
 
@@ -108,7 +118,8 @@ class ASTDependencyAnalyzer:
         """
         # Find all Python files, excluding virtual environments and caches
         py_files = [
-            p for p in self.repo_root.glob(file_pattern)
+            p
+            for p in self.repo_root.glob(file_pattern)
             if not any(skip in p.parts for skip in self.SKIP_DIRS)
         ]
 
@@ -121,7 +132,11 @@ class ASTDependencyAnalyzer:
 
                 # Also register package names for directories with __init__.py
                 if py_file.name == "__init__.py":
-                    package_name = module_name.rsplit(".", 1)[0] if "." in module_name else module_name
+                    package_name = (
+                        module_name.rsplit(".", 1)[0]
+                        if "." in module_name
+                        else module_name
+                    )
                     self.module_to_file[package_name] = rel_path
 
         # Extract imports for each file
@@ -148,7 +163,9 @@ class ASTDependencyAnalyzer:
                 else:
                     # Try partial matches for relative imports
                     for mod_name, mod_file in self.module_to_file.items():
-                        if mod_name.startswith(imported_module + ".") or mod_name.endswith("." + imported_module):
+                        if mod_name.startswith(
+                            imported_module + "."
+                        ) or mod_name.endswith("." + imported_module):
                             target_file = mod_file
                             break
 
@@ -296,14 +313,13 @@ class ASTDependencyAnalyzer:
         return "\n".join(lines)
 
     def compute_combined_score(
-        self, chaos_score: float, blast_radius: int, churn_score: float = 0.0
+        self, chaos_score: float, blast_radius: int
     ) -> tuple[float, str]:
-        """Compute a combined risk score incorporating chaos, blast radius, and churn.
+        """Compute a combined risk score incorporating chaos and blast radius.
 
         Args:
             chaos_score: Chaos/complexity score (0-1)
             blast_radius: Number of impacted files
-            churn_score: Git churn score (0-1, optional)
 
         Returns:
             Tuple of (combined_score, risk_level)
@@ -312,12 +328,7 @@ class ASTDependencyAnalyzer:
         normalized_blast = min(1.0, blast_radius / 50.0)
 
         # Combined score: weighted average
-        if churn_score > 0:
-            # Include churn: chaos(40%) + blast(30%) + churn(30%)
-            combined = 0.4 * chaos_score + 0.3 * normalized_blast + 0.3 * churn_score
-        else:
-            # No churn: chaos(60%) + blast(40%)
-            combined = 0.6 * chaos_score + 0.4 * normalized_blast
+        combined = 0.6 * chaos_score + 0.4 * normalized_blast
 
         if combined >= 0.40:
             risk_level = "CRITICAL"

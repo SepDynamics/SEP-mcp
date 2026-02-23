@@ -31,12 +31,6 @@ predict_structural_ejection    path="mcp_server.py"  horizon_days=30
 visualize_manifold_trajectory  path="mcp_server.py"
 ```
 
-## Git Integration
-
-```
-analyze_git_churn         path="mcp_server.py"  days_back=365
-```
-
 ## Dependency & Combined Risk
 
 ```
@@ -117,7 +111,6 @@ remove_fact          fact_id="api_rules"
 | Valkey not reachable | `valkey-server` or `redis-server` |
 | File not found | `list_indexed_files  (pattern="*name*")` then re-ingest |
 | Cannot compute chaos | File <512 bytes or encoder unavailable |
-| No Git history | Ensure `.git` exists; churn degrades gracefully to 0 |
 
 ---
 
