@@ -14,23 +14,42 @@ Signal-first pipeline (identical to the chaos proxy):
 5. Entropy + coherence as secondary metrics
 6. Hazard gating (collapse detection) on every retrieval
 
-Tools exposed (merged from prototype + chaos expansion):
-  • ingest_repo          – stream-ingest repo into Valkey (text + sigs + chaos)
-  • search_code          – keyword / regex search across indexed files
-  • get_file             – read a single indexed file
-  • list_indexed_files   – list indexed paths (glob filter)
-  • get_index_stats      – Valkey db health + doc count
-  • compute_signature    – compress text to manifold signatures
-  • verify_snippet       – hazard-gated snippet verification
-  • get_file_signature   – get structural signature for a file
-  • search_by_structure  – find structurally similar files
-  • start_watcher        – live filesystem watcher for IDE saves
-  • inject_fact          – zero-shot fact injection into codebook
-  • remove_fact          – remove injected facts from codebook
-  • analyze_code_chaos   – full ChaosResult per file
-  • batch_chaos_scan     – GPU-style batch validation
-  • predict_structural_ejection – maintainability forecast
-  • visualize_manifold_trajectory – 4-panel dashboard
+Tools exposed (22 total):
+  Core Analysis:
+    • ingest_repo          – stream-ingest repo into Valkey (text + sigs + chaos)
+    • get_index_stats      – Valkey db health + doc count
+    • start_watcher        – live filesystem watcher for IDE saves
+
+  Search & Retrieval:
+    • search_code          – keyword / regex search across indexed files
+    • get_file             – read a single indexed file
+    • list_indexed_files   – list indexed paths (glob filter)
+    • search_by_structure  – find structurally similar files
+
+  Structural Analysis:
+    • compute_signature    – compress text to manifold signatures
+    • get_file_signature   – get structural signature for a file
+    • verify_snippet       – hazard-gated snippet verification
+
+  Chaos Detection:
+    • analyze_code_chaos   – full ChaosResult per file
+    • batch_chaos_scan     – GPU-style batch validation
+    • predict_structural_ejection – maintainability forecast
+    • visualize_manifold_trajectory – 4-panel dashboard
+
+  Git Integration (NEW):
+    • analyze_git_churn    – Git commit frequency and churn metrics
+    • compute_friction_score – chaos × churn (high-maintenance files)
+    • scan_high_friction_files – repo-wide friction scan
+
+  Dependency Analysis (NEW):
+    • analyze_blast_radius – AST-based impact analysis
+    • compute_combined_risk – chaos × blast_radius × churn
+    • scan_critical_files  – ultimate risk assessment
+
+  Working Memory:
+    • inject_fact          – zero-shot fact injection into codebook
+    • remove_fact          – remove injected facts from codebook
 
 For comprehensive usage guide and workflows, see: MCP_TOOL_GUIDE.md
 For quick start, see: README.md
@@ -45,6 +64,7 @@ import re
 import sys
 import time
 import zstandard as zstd
+from datetime import datetime
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Annotated, Dict, List, Optional
@@ -81,6 +101,7 @@ mcp = FastMCP("SymbolicChaosProxy")
 # Lazy singletons
 # ---------------------------------------------------------------------------
 _valkey_wm = None
+_ast_analyzer = None
 
 
 def _get_valkey():
@@ -90,6 +111,31 @@ def _get_valkey():
 
         _valkey_wm = ValkeyWorkingMemory()
     return _valkey_wm
+
+
+def _get_ast_analyzer():
+    """Get or create the AST dependency analyzer singleton.
+    
+    The analyzer builds the dependency graph once and caches it.
+    Call invalidate_ast_cache() to rebuild (e.g., after file changes).
+    """
+    global _ast_analyzer
+    if _ast_analyzer is None:
+        from src.manifold.ast_deps import ASTDependencyAnalyzer
+
+        _ast_analyzer = ASTDependencyAnalyzer(WORKSPACE_ROOT)
+        _ast_analyzer.build_dependency_graph()
+        _ast_analyzer.analyze_all()
+    return _ast_analyzer
+
+
+def invalidate_ast_cache():
+    """Invalidate the cached AST dependency graph.
+    
+    Call this when files are created/deleted/renamed to force a rebuild.
+    """
+    global _ast_analyzer
+    _ast_analyzer = None
 
 
 # ---------------------------------------------------------------------------
@@ -1483,6 +1529,539 @@ def visualize_manifold_trajectory(
         f"    3. Time series (hazard/entropy/coherence per window)\n"
         f"    4. Symbolic state distribution (LOW/OSCILLATION/HIGH bar chart)"
     )
+
+
+# ===================================================================
+# TOOL: analyze_git_churn
+# ===================================================================
+@mcp.tool()
+def analyze_git_churn(
+    path: Annotated[
+        str,
+        Field(description="File path relative to repo root (e.g. 'mcp_server.py')"),
+    ],
+    days_back: Annotated[
+        int, Field(description="Number of days to analyze (default 365)")
+    ] = 365,
+) -> str:
+    """Analyze Git churn for a specific file.
+
+    Returns commit frequency, recent activity, and churn score.
+    Helps identify files that are frequently modified (high maintenance burden).
+    """
+    from src.manifold.git_churn import GitChurnAnalyzer
+
+    path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
+
+    try:
+        analyzer = GitChurnAnalyzer(WORKSPACE_ROOT)
+        metrics = analyzer.get_file_churn(path, days_back)
+
+        if not metrics:
+            return f"❌ No Git history found for '{path}'."
+
+        days_since_modified = (
+            datetime.now() - metrics.last_modified
+        ).days
+
+        return f"""📈 Git Churn Analysis for {path}
+
+Total Commits        : {metrics.total_commits}
+Recent Commits (90d) : {metrics.recent_commits}
+Commits/Month        : {metrics.commits_per_month:.2f}
+Unique Authors       : {metrics.unique_authors}
+Lines Added (total)  : {metrics.lines_added:,}
+Lines Deleted (total): {metrics.lines_deleted:,}
+File Age (days)      : {metrics.age_days}
+Days Since Modified  : {days_since_modified}
+Churn Score          : {metrics.churn_score:.3f}
+
+Interpretation:
+  - Churn score combines recent activity with commit frequency
+  - Higher churn (>0.5) = actively modified file
+  - Lower churn (<0.2) = stable file
+"""
+    except ValueError as e:
+        return f"❌ {str(e)}"
+    except Exception as e:
+        return f"❌ Error analyzing churn: {str(e)}"
+
+
+@mcp.tool()
+def compute_friction_score(
+    path: Annotated[
+        str,
+        Field(description="File path relative to repo root"),
+    ],
+) -> str:
+    """Compute friction score = chaos × churn.
+
+    Identifies files that are BOTH complex AND frequently modified.
+    These are the highest-friction areas of the codebase.
+    """
+    from src.manifold.git_churn import GitChurnAnalyzer
+
+    path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
+
+    # Get chaos score
+    v = _get_valkey()
+    raw_chaos = v.raw_r.hget(f"{FILE_HASH_PREFIX}{path}", "chaos")
+    if not raw_chaos:
+        return f"❌ No chaos data for '{path}'. Run ingest_repo first."
+
+    try:
+        chaos_json = _decompress(raw_chaos).decode("utf-8")
+        chaos_data = json.loads(chaos_json)
+        chaos_score = chaos_data["chaos_score"]
+    except Exception:
+        return f"❌ Could not parse chaos data for '{path}'."
+
+    # Get churn score
+    try:
+        analyzer = GitChurnAnalyzer(WORKSPACE_ROOT)
+        churn_metrics = analyzer.get_file_churn(path)
+
+        if not churn_metrics:
+            return f"❌ No Git history for '{path}'."
+
+        churn_score = churn_metrics.churn_score
+        friction, risk = analyzer.compute_friction_score(chaos_score, churn_score)
+
+        return f"""🔥 Friction Analysis for {path}
+
+Chaos Score  : {chaos_score:.3f}
+Churn Score  : {churn_score:.3f}
+Friction     : {friction:.3f}
+Risk Level   : {risk}
+
+Components:
+  • Chaos  : Structural complexity ({chaos_data['collapse_risk']} risk)
+  • Churn  : {churn_metrics.recent_commits} commits in last 90 days
+  • Friction: chaos × churn = {friction:.3f}
+
+Interpretation:
+  [CRITICAL] ≥0.30 : Urgent attention needed
+  [HIGH]     ≥0.20 : Should refactor soon
+  [MODERATE] ≥0.10 : Monitor closely
+  [LOW]      <0.10 : Acceptable risk
+
+Recommendation:
+  {_get_friction_recommendation(friction, chaos_score, churn_score)}
+"""
+    except ValueError as e:
+        return f"❌ {str(e)}"
+    except Exception as e:
+        return f"❌ Error computing friction: {str(e)}"
+
+
+@mcp.tool()
+def scan_high_friction_files(
+    pattern: Annotated[
+        str,
+        Field(description="Glob pattern to filter files (e.g. '*.py', 'src/*.cpp')"),
+    ] = "*.py",
+    min_friction: Annotated[
+        float, Field(description="Minimum friction score to include (default 0.20)")
+    ] = 0.20,
+    max_files: Annotated[
+        int, Field(description="Maximum number of files to return (default 30)")
+    ] = 30,
+) -> str:
+    """Scan repository for high-friction files (high chaos × high churn).
+
+    Returns files ranked by friction score.
+    """
+    from src.manifold.git_churn import GitChurnAnalyzer
+
+    v = _get_valkey()
+    if not v.ping():
+        return "❌ Valkey not reachable."
+
+    # Get chaos scores
+    chaos_data = {}
+    keys = []
+    rels = []
+    for key in v.r.scan_iter(f"{FILE_HASH_PREFIX}*", count=500):
+        rel = key[len(FILE_HASH_PREFIX) :]
+        from fnmatch import fnmatch
+
+        if pattern != "*" and not fnmatch(rel, pattern):
+            continue
+        keys.append(key)
+        rels.append(rel)
+
+    batch_size = 500
+    for i in range(0, len(keys), batch_size):
+        batch_keys = keys[i : i + batch_size]
+        batch_rels = rels[i : i + batch_size]
+
+        pipe = v.raw_r.pipeline(transaction=False)
+        for key in batch_keys:
+            pipe.hget(key.encode("utf-8"), b"chaos")
+        chaos_docs = pipe.execute()
+
+        for rel, chaos_bytes in zip(batch_rels, chaos_docs):
+            if chaos_bytes:
+                try:
+                    js = _decompress(chaos_bytes).decode("utf-8")
+                    chaos = json.loads(js)
+                    chaos_data[rel] = chaos["chaos_score"]
+                except Exception:
+                    pass
+
+    # Get churn data
+    try:
+        analyzer = GitChurnAnalyzer(WORKSPACE_ROOT)
+        churn_data = analyzer.get_repo_churn(file_pattern=pattern)
+    except ValueError:
+        return "❌ Not a Git repository. Friction analysis requires Git."
+
+    # Compute friction scores
+    friction_files = analyzer.get_high_friction_files(
+        chaos_data, churn_data, threshold=min_friction
+    )
+
+    friction_files = friction_files[:max_files]
+
+    if not friction_files:
+        return f"No files found with friction ≥{min_friction}."
+
+    lines = [
+        f"🔥 High-Friction Files (Top {len(friction_files)} with friction ≥{min_friction}):\n"
+    ]
+    for file_path, friction, risk in friction_files:
+        chaos = chaos_data.get(file_path, 0)
+        churn = churn_data.get(file_path)
+        churn_val = churn.churn_score if churn else 0
+
+        lines.append(
+            f"  [{risk:>8}] {friction:.3f} | {file_path}"
+            f"  (chaos={chaos:.3f}, churn={churn_val:.3f})"
+        )
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def analyze_blast_radius(
+    path: Annotated[
+        str,
+        Field(description="File path relative to repo root"),
+    ],
+) -> str:
+    """Analyze the blast radius of a file.
+
+    Shows how many files would be impacted if this file were changed.
+    Uses AST analysis to trace import dependencies.
+    """
+    from src.manifold.ast_deps import ASTDependencyAnalyzer
+
+    path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
+
+    try:
+        # Use cached AST analyzer singleton
+        analyzer = _get_ast_analyzer()
+
+        dep_info = analyzer.get_dependency_info(path)
+        if not dep_info:
+            return f"❌ File not found or not a Python file: '{path}'"
+
+        blast_radius = dep_info.blast_radius
+        depth = dep_info.depth
+        is_core = dep_info.is_core
+
+        # Get dependency tree
+        dep_tree = analyzer.visualize_dependencies(path, max_depth=2)
+
+        return f"""💥 Blast Radius Analysis for {path}
+
+Blast Radius     : {blast_radius} files
+Dependency Depth : {depth} levels
+Is Core Module   : {"Yes" if is_core else "No"}
+Direct Imports   : {len(dep_info.imports)}
+Imported By      : {len(dep_info.imported_by)}
+
+Impact Assessment:
+  {_get_blast_radius_interpretation(blast_radius)}
+
+Dependency Tree (2 levels):
+{dep_tree}
+
+Imports:
+  {', '.join(sorted(dep_info.imports)[:10]) if dep_info.imports else 'None'}
+  {f'... and {len(dep_info.imports) - 10} more' if len(dep_info.imports) > 10 else ''}
+
+Imported By:
+  {', '.join(sorted(dep_info.imported_by)[:10]) if dep_info.imported_by else 'None'}
+  {f'... and {len(dep_info.imported_by) - 10} more' if len(dep_info.imported_by) > 10 else ''}
+"""
+    except Exception as e:
+        return f"❌ Error analyzing blast radius: {str(e)}"
+
+
+@mcp.tool()
+def compute_combined_risk(
+    path: Annotated[
+        str,
+        Field(description="File path relative to repo root"),
+    ],
+) -> str:
+    """Compute combined risk score = chaos × blast_radius × churn.
+
+    This is the ultimate metric for identifying the most critical files to refactor.
+    """
+    from src.manifold.ast_deps import ASTDependencyAnalyzer
+    from src.manifold.git_churn import GitChurnAnalyzer
+
+    path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
+
+    # Get chaos score
+    v = _get_valkey()
+    raw_chaos = v.raw_r.hget(f"{FILE_HASH_PREFIX}{path}", "chaos")
+    if not raw_chaos:
+        return f"❌ No chaos data for '{path}'. Run ingest_repo first."
+
+    try:
+        chaos_json = _decompress(raw_chaos).decode("utf-8")
+        chaos_data = json.loads(chaos_json)
+        chaos_score = chaos_data["chaos_score"]
+    except Exception:
+        return f"❌ Could not parse chaos data for '{path}'."
+
+    # Get blast radius (using cached AST analyzer)
+    try:
+        dep_analyzer = _get_ast_analyzer()
+        dep_info = dep_analyzer.get_dependency_info(path)
+        blast_radius = dep_info.blast_radius if dep_info else 0
+    except Exception:
+        blast_radius = 0
+
+    # Get churn score
+    try:
+        churn_analyzer = GitChurnAnalyzer(WORKSPACE_ROOT)
+        churn_metrics = churn_analyzer.get_file_churn(path)
+        churn_score = churn_metrics.churn_score if churn_metrics else 0
+    except Exception:
+        churn_score = 0
+
+    # Compute combined risk
+    combined, risk_level = dep_analyzer.compute_combined_score(
+        chaos_score, blast_radius, churn_score
+    )
+
+    return f"""⚠️ Combined Risk Analysis for {path}
+
+Components:
+  Chaos Score      : {chaos_score:.3f} ({chaos_data['collapse_risk']} complexity)
+  Blast Radius     : {blast_radius} files
+  Churn Score      : {churn_score:.3f}
+
+Combined Risk Score: {combined:.3f}
+Risk Level         : {risk_level}
+
+Formula:
+  combined = 0.4 × chaos + 0.3 × blast + 0.3 × churn
+  combined = 0.4 × {chaos_score:.3f} + 0.3 × {blast_radius/50:.3f} + 0.3 × {churn_score:.3f}
+  combined = {combined:.3f}
+
+Risk Levels:
+  [CRITICAL] ≥0.40 : Immediate refactoring required
+  [HIGH]     ≥0.30 : Schedule refactoring within sprint
+  [MODERATE] ≥0.20 : Monitor and consider refactoring
+  [LOW]      <0.20 : Acceptable risk
+
+Recommendation:
+  {_get_combined_risk_recommendation(combined, chaos_score, blast_radius, churn_score)}
+"""
+
+
+@mcp.tool()
+def scan_critical_files(
+    pattern: Annotated[
+        str,
+        Field(description="Glob pattern to filter files (e.g. '*.py')"),
+    ] = "*.py",
+    min_combined_risk: Annotated[
+        float, Field(description="Minimum combined risk score (default 0.30)")
+    ] = 0.30,
+    max_files: Annotated[
+        int, Field(description="Maximum files to return (default 20)")
+    ] = 20,
+) -> str:
+    """Scan for critical files with high combined risk (chaos × blast_radius × churn).
+
+    This identifies the most dangerous files in the codebase.
+    """
+    from src.manifold.ast_deps import ASTDependencyAnalyzer
+    from src.manifold.git_churn import GitChurnAnalyzer
+
+    v = _get_valkey()
+    if not v.ping():
+        return "❌ Valkey not reachable."
+
+    # Get chaos scores
+    chaos_data = {}
+    keys = []
+    rels = []
+    for key in v.r.scan_iter(f"{FILE_HASH_PREFIX}*", count=500):
+        rel = key[len(FILE_HASH_PREFIX) :]
+        from fnmatch import fnmatch
+
+        if pattern != "*" and not fnmatch(rel, pattern):
+            continue
+        keys.append(key)
+        rels.append(rel)
+
+    batch_size = 500
+    for i in range(0, len(keys), batch_size):
+        batch_keys = keys[i : i + batch_size]
+        batch_rels = rels[i : i + batch_size]
+
+        pipe = v.raw_r.pipeline(transaction=False)
+        for key in batch_keys:
+            pipe.hget(key.encode("utf-8"), b"chaos")
+        chaos_docs = pipe.execute()
+
+        for rel, chaos_bytes in zip(batch_rels, chaos_docs):
+            if chaos_bytes:
+                try:
+                    js = _decompress(chaos_bytes).decode("utf-8")
+                    chaos = json.loads(js)
+                    chaos_data[rel] = chaos["chaos_score"]
+                except Exception:
+                    pass
+
+    # Get blast radius (using cached AST analyzer)
+    try:
+        dep_analyzer = _get_ast_analyzer()
+    except Exception as e:
+        return f"❌ Error analyzing dependencies: {str(e)}"
+
+    # Get churn data
+    try:
+        churn_analyzer = GitChurnAnalyzer(WORKSPACE_ROOT)
+        churn_data = churn_analyzer.get_repo_churn(file_pattern=pattern)
+    except ValueError:
+        churn_data = {}  # Not a Git repo
+
+    # Compute combined risks
+    critical_files = []
+    for file_path in chaos_data:
+        chaos = chaos_data[file_path]
+        dep_info = dep_analyzer.get_dependency_info(file_path)
+        blast_radius = dep_info.blast_radius if dep_info else 0
+        churn_metrics = churn_data.get(file_path)
+        churn_score = churn_metrics.churn_score if churn_metrics else 0
+
+        combined, risk_level = dep_analyzer.compute_combined_score(
+            chaos, blast_radius, churn_score
+        )
+
+        if combined >= min_combined_risk:
+            critical_files.append((file_path, combined, risk_level, chaos, blast_radius, churn_score))
+
+    # Sort by combined risk descending
+    critical_files.sort(key=lambda x: x[1], reverse=True)
+    critical_files = critical_files[:max_files]
+
+    if not critical_files:
+        return f"No files found with combined risk ≥{min_combined_risk}."
+
+    lines = [
+        f"⚠️ Critical Files (Top {len(critical_files)} with risk ≥{min_combined_risk}):\n"
+    ]
+    for file_path, combined, risk_level, chaos, blast, churn in critical_files:
+        lines.append(
+            f"  [{risk_level:>8}] {combined:.3f} | {file_path}"
+        )
+        lines.append(
+            f"             chaos={chaos:.3f}, blast={blast:>2}, churn={churn:.3f}"
+        )
+
+    return "\n".join(lines)
+
+
+# Helper functions for recommendations
+def _get_friction_recommendation(friction: float, chaos: float, churn: float) -> str:
+    """Generate recommendation based on friction score."""
+    if friction >= 0.30:
+        return (
+            "This file is both highly complex AND frequently modified.\n"
+            "  Priority: URGENT. Consider immediate refactoring or stabilization."
+        )
+    elif friction >= 0.20:
+        return (
+            "This file combines moderate-to-high complexity with active churn.\n"
+            "  Priority: HIGH. Schedule refactoring in next sprint."
+        )
+    elif friction >= 0.10:
+        if chaos > 0.40:
+            return "High complexity but low churn. Monitor for increased activity."
+        elif churn > 0.50:
+            return "High churn but manageable complexity. Ensure good test coverage."
+        else:
+            return "Moderate friction. Monitor for trends."
+    else:
+        return "Low friction. File is either simple, stable, or both. No action needed."
+
+
+def _get_blast_radius_interpretation(blast_radius: int) -> str:
+    """Generate interpretation of blast radius."""
+    if blast_radius >= 20:
+        return (
+            f"VERY HIGH IMPACT ({blast_radius} files). This is a core module.\n"
+            "  Changes here will ripple through the entire codebase.\n"
+            "  Requires careful coordination and comprehensive testing."
+        )
+    elif blast_radius >= 10:
+        return (
+            f"HIGH IMPACT ({blast_radius} files). Important integration point.\n"
+            "  Changes will affect multiple subsystems.\n"
+            "  Ensure thorough testing and communication."
+        )
+    elif blast_radius >= 5:
+        return (
+            f"MODERATE IMPACT ({blast_radius} files). Localized but not isolated.\n"
+            "  Changes will affect several files.\n"
+            "  Standard testing procedures apply."
+        )
+    else:
+        return (
+            f"LOW IMPACT ({blast_radius} files). Relatively isolated.\n"
+            "  Changes are localized and easier to validate."
+        )
+
+
+def _get_combined_risk_recommendation(
+    combined: float, chaos: float, blast_radius: int, churn: float
+) -> str:
+    """Generate recommendation based on combined risk."""
+    if combined >= 0.40:
+        return (
+            "CRITICAL RISK. This file represents a severe technical debt hotspot.\n"
+            f"  • Complex ({chaos:.2f}) + Wide impact ({blast_radius} files) + Active churn ({churn:.2f})\n"
+            "  Action: Immediate refactoring session. Break into smaller modules.\n"
+            "  Consider: Feature freeze until stabilization complete."
+        )
+    elif combined >= 0.30:
+        return (
+            "HIGH RISK. This file needs attention soon.\n"
+            f"  • Complexity: {chaos:.2f}, Blast radius: {blast_radius}, Churn: {churn:.2f}\n"
+            "  Action: Schedule refactoring in current/next sprint.\n"
+            "  Consider: Add comprehensive tests before refactoring."
+        )
+    elif combined >= 0.20:
+        return (
+            "MODERATE RISK. Monitor this file closely.\n"
+            f"  • Complexity: {chaos:.2f}, Blast radius: {blast_radius}, Churn: {churn:.2f}\n"
+            "  Action: Add to technical debt backlog.\n"
+            "  Consider: Improve documentation and test coverage."
+        )
+    else:
+        return (
+            "LOW RISK. This file is in acceptable condition.\n"
+            "  Continue normal maintenance practices."
+        )
 
 
 # ===================================================================

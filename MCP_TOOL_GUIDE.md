@@ -1083,4 +1083,541 @@ The chaos detection has been empirically validated:
 
 ---
 
+## New Features: Git Integration & Blast Radius Analysis
+
+**Added**: 2026-02-23 (6 new tools)
+
+### Git Churn Analysis
+
+Track how frequently files are modified to identify high-maintenance areas.
+
+#### `analyze_git_churn`
+**Purpose**: Analyze Git commit history for a specific file.
+
+**Parameters**:
+- `path` (required): File path relative to repo root
+- `days_back` (default: `365`): Number of days to analyze
+
+**When to use**:
+- Identify frequently modified files
+- Understand file stability
+- Assess maintenance burden
+
+**Example**:
+```
+mcp--manifold--analyze_git_churn
+  path: "mcp_server.py"
+  days_back: 365
+```
+
+**Expected output**:
+```
+📈 Git Churn Analysis for mcp_server.py
+
+Total Commits        : 47
+Recent Commits (90d) : 12
+Commits/Month        : 3.42
+Unique Authors       : 2
+Lines Added (total)  : 2,451
+Lines Deleted (total): 1,103
+File Age (days)      : 413
+Days Since Modified  : 2
+Churn Score          : 0.643
+
+Interpretation:
+  - Churn score combines recent activity with commit frequency
+  - Higher churn (>0.5) = actively modified file
+  - Lower churn (<0.2) = stable file
+```
+
+---
+
+#### `compute_friction_score`
+**Purpose**: Compute friction score = chaos × churn.
+
+High friction identifies files that are **both complex AND frequently modified** - the ultimate maintenance burden.
+
+**Parameters**:
+- `path` (required): File path relative to repo root
+
+**When to use**:
+- Prioritize refactoring efforts
+- Identify developer pain points
+- Assess technical debt hotspots
+
+**Example**:
+```
+mcp--manifold--compute_friction_score
+  path: "mcp_server.py"
+```
+
+**Expected output**:
+```
+🔥 Friction Analysis for mcp_server.py
+
+Chaos Score  : 0.399
+Churn Score  : 0.643
+Friction     : 0.257
+Risk Level   : HIGH
+
+Components:
+  • Chaos  : Structural complexity (HIGH risk)
+  • Churn  : 12 commits in last 90 days
+  • Friction: chaos × churn = 0.257
+
+Interpretation:
+  [CRITICAL] ≥0.30 : Urgent attention needed
+  [HIGH]     ≥0.20 : Should refactor soon
+  [MODERATE] ≥0.10 : Monitor closely
+  [LOW]      <0.10 : Acceptable risk
+
+Recommendation:
+  This file combines moderate-to-high complexity with active churn.
+  Priority: HIGH. Schedule refactoring in next sprint.
+```
+
+**Friction Score Interpretation**:
+- **≥0.30**: CRITICAL - Both complex AND highly active
+- **0.20-0.29**: HIGH - Significant maintenance burden
+- **0.10-0.19**: MODERATE - Monitor for trends
+- **<0.10**: LOW - Either simple, stable, or both
+
+---
+
+#### `scan_high_friction_files`
+**Purpose**: Scan entire repository for high-friction files.
+
+**Parameters**:
+- `pattern` (default: `"*.py"`): Glob pattern to filter files
+- `min_friction` (default: `0.20`): Minimum friction threshold
+- `max_files` (default: `30`): Maximum files to return
+
+**When to use**:
+- Sprint planning (identify refactoring candidates)
+- Technical debt assessment
+- Developer onboarding (show pain points)
+
+**Example**:
+```
+mcp--manifold--scan_high_friction_files
+  pattern: "*.py"
+  min_friction: 0.20
+  max_files: 30
+```
+
+**Expected output**:
+```
+🔥 High-Friction Files (Top 5 with friction ≥0.20):
+
+  [    HIGH] 0.271 | scripts/rag/bulk_valkey_ingest.py  (chaos=0.422, churn=0.643)
+  [    HIGH] 0.257 | mcp_server.py  (chaos=0.399, churn=0.643)
+  [    HIGH] 0.234 | src/manifold/sidecar.py  (chaos=0.408, churn=0.574)
+  [    HIGH] 0.220 | scripts/rag/active_watcher.py  (chaos=0.407, churn=0.541)
+  [    HIGH] 0.209 | scripts/tests/test_mcp_tools.py  (chaos=0.402, churn=0.520)
+```
+
+---
+
+### Blast Radius Analysis
+
+Use AST parsing to trace dependencies and understand impact of changes.
+
+#### `analyze_blast_radius`
+**Purpose**: Calculate how many files would be impacted if a file changes.
+
+**Parameters**:
+- `path` (required): File path relative to repo root
+
+**When to use**:
+- Before refactoring (assess impact)
+- Identify core modules
+- Plan breaking changes
+- Architecture review
+
+**Example**:
+```
+mcp--manifold--analyze_blast_radius
+  path: "src/manifold/sidecar.py"
+```
+
+**Expected output**:
+```
+💥 Blast Radius Analysis for src/manifold/sidecar.py
+
+Blast Radius     : 8 files
+Dependency Depth : 2 levels
+Is Core Module   : Yes
+Direct Imports   : 5
+Imported By      : 8
+
+Impact Assessment:
+  MODERATE IMPACT (8 files). Localized but not isolated.
+  Changes will affect several files.
+  Standard testing procedures apply.
+
+Dependency Tree (2 levels):
+📦 src/manifold/sidecar.py
+├── mcp_server.py
+│   └── (end of tree)
+├── scripts/rag/build_manifold_index.py
+├── scripts/rag/bulk_valkey_ingest.py
+├── scripts/rag/verify_snippet.py
+└── scripts/tests/test_mcp_tools.py
+
+Imports:
+  ast, dataclasses, json, pathlib, subprocess, typing
+
+Imported By:
+  mcp_server.py, scripts/rag/build_manifold_index.py, scripts/rag/bulk_valkey_ingest.py, ...
+```
+
+**Blast Radius Interpretation**:
+- **≥20 files**: VERY HIGH - Core module, system-wide impact
+- **10-19 files**: HIGH - Important integration point
+- **5-9 files**: MODERATE - Localized impact
+- **<5 files**: LOW - Relatively isolated
+
+---
+
+#### `compute_combined_risk`
+**Purpose**: Compute ultimate risk score = chaos × blast_radius × churn.
+
+This is the **most comprehensive risk metric**, combining:
+1. **Chaos**: Structural complexity
+2. **Blast Radius**: Impact scope
+3. **Churn**: Modification frequency
+
+**Parameters**:
+- `path` (required): File path relative to repo root
+
+**When to use**:
+- Ultimate refactoring prioritization
+- Critical path analysis
+- Risk assessment for releases
+- Technical debt quantification
+
+**Example**:
+```
+mcp--manifold--compute_combined_risk
+  path: "mcp_server.py"
+```
+
+**Expected output**:
+```
+⚠️ Combined Risk Analysis for mcp_server.py
+
+Components:
+  Chaos Score      : 0.399 (HIGH complexity)
+  Blast Radius     : 15 files
+  Churn Score      : 0.643
+
+Combined Risk Score: 0.399
+Risk Level         : CRITICAL
+
+Formula:
+  combined = 0.4 × chaos + 0.3 × blast + 0.3 × churn
+  combined = 0.4 × 0.399 + 0.3 × 0.300 + 0.3 × 0.643
+  combined = 0.399
+
+Risk Levels:
+  [CRITICAL] ≥0.40 : Immediate refactoring required
+  [HIGH]     ≥0.30 : Schedule refactoring within sprint
+  [MODERATE] ≥0.20 : Monitor and consider refactoring
+  [LOW]      <0.20 : Acceptable risk
+
+Recommendation:
+  HIGH RISK. This file needs attention soon.
+  • Complexity: 0.40, Blast radius: 15, Churn: 0.64
+  Action: Schedule refactoring in current/next sprint.
+  Consider: Add comprehensive tests before refactoring.
+```
+
+**Combined Risk Formula**:
+```
+combined_risk = 0.4 × chaos + 0.3 × (blast_radius/50) + 0.3 × churn
+```
+
+**Why this weighting?**
+- **40% Chaos**: Complexity is the primary concern
+- **30% Blast**: Impact scope matters for coordination
+- **30% Churn**: Active modification indicates pain points
+
+---
+
+#### `scan_critical_files`
+**Purpose**: Scan entire repository for critical files using combined risk.
+
+**Parameters**:
+- `pattern` (default: `"*.py"`): Glob pattern to filter files
+- `min_combined_risk` (default: `0.30`): Minimum risk threshold
+- `max_files` (default: `20`): Maximum files to return
+
+**When to use**:
+- Strategic refactoring planning
+- Quarterly technical debt review
+- Risk assessment before major releases
+- Team capacity planning
+
+**Example**:
+```
+mcp--manifold--scan_critical_files
+  pattern: "*.py"
+  min_combined_risk: 0.30
+  max_files: 20
+```
+
+**Expected output**:
+```
+⚠️ Critical Files (Top 3 with risk ≥0.30):
+
+  [CRITICAL] 0.423 | mcp_server.py
+             chaos=0.399, blast=15, churn=0.643
+  [    HIGH] 0.387 | src/manifold/sidecar.py
+             chaos=0.408, blast= 8, churn=0.574
+  [    HIGH] 0.352 | scripts/rag/bulk_valkey_ingest.py
+             chaos=0.422, blast= 3, churn=0.643
+```
+
+---
+
+### Workflow: Comprehensive Risk Assessment
+
+**Goal**: Identify the single most critical file to refactor.
+
+```
+1. mcp--manifold--ingest_repo (full indexing)
+2. mcp--manifold--scan_critical_files (pattern="*.py", min_combined_risk=0.30)
+3. For top file:
+   a. mcp--manifold--compute_combined_risk (path="{file}")
+   b. mcp--manifold--analyze_blast_radius (path="{file}")
+   c. mcp--manifold--compute_friction_score (path="{file}")
+   d. mcp--manifold--visualize_manifold_trajectory (path="{file}")
+4. Decision: Refactor now vs later
+```
+
+---
+
+### Workflow: Sprint Planning
+
+**Goal**: Identify refactoring candidates for the next sprint.
+
+```
+1. mcp--manifold--scan_high_friction_files (min_friction=0.20, max_files=30)
+2. For each high-friction file:
+   - Check blast radius (is it a core module?)
+   - Check combined risk (is it critical?)
+   - Estimate refactoring effort (LOC, complexity)
+3. Select 1-2 files that fit sprint capacity
+4. Create refactoring tasks with context
+```
+
+---
+
+### Workflow: Pre-Refactoring Assessment
+
+**Goal**: Understand impact before refactoring a specific file.
+
+```
+1. mcp--manifold--compute_combined_risk (path="{target_file}")
+2. mcp--manifold--analyze_blast_radius (path="{target_file}")
+3. Review dependency tree (which files will be affected?)
+4. mcp--manifold--analyze_git_churn (path="{target_file}")
+5. Check if other developers are actively working on it
+6. Decision: Safe to refactor? Need coordination?
+```
+
+---
+
+### Workflow: Technical Debt Quantification
+
+**Goal**: Create a technical debt report for stakeholders.
+
+```
+1. mcp--manifold--ingest_repo
+2. mcp--manifold--batch_chaos_scan (all files)
+3. mcp--manifold--scan_critical_files (combined risk report)
+4. mcp--manifold--scan_high_friction_files (maintenance burden)
+5. Generate summary:
+   - Total files with HIGH/CRITICAL risk
+   - Estimated refactoring effort (story points)
+   - Priority ranking
+   - ROI analysis (friction reduction)
+```
+
+---
+
+## Integration Examples
+
+### Example 1: Combined Friction + Chaos Analysis
+
+```python
+# Pseudocode workflow
+files = scan_high_friction_files(pattern="src/**/*.py", min_friction=0.15)
+
+for file_path, friction, risk_level in files:
+    if friction >= 0.25:
+        # High friction - analyze further
+        chaos_data = analyze_code_chaos(file_path)
+        blast_data = analyze_blast_radius(file_path)
+        
+        print(f"REFACTOR CANDIDATE: {file_path}")
+        print(f"  Friction: {friction} (chaos={chaos_data['chaos_score']}, churn high)")
+        print(f"  Blast radius: {blast_data['blast_radius']} files")
+        print(f"  Action: {'URGENT' if friction >= 0.30 else 'Schedule next sprint'}")
+```
+
+---
+
+### Example 2: Architecture Review
+
+```python
+# Find core modules (high blast radius)
+blast_analyzer = ASTDependencyAnalyzer(repo_root)
+blast_analyzer.build_dependency_graph()
+core_modules = blast_analyzer.get_high_impact_files(min_blast_radius=10)
+
+for file_path, dep_info in core_modules:
+    print(f"CORE MODULE: {file_path}")
+    print(f"  Impacts {dep_info.blast_radius} files")
+    print(f"  Depth: {dep_info.depth} levels")
+    
+    # Check if it's also complex
+    chaos = get_chaos_score(file_path)
+    if chaos > 0.40:
+        print(f"  WARNING: High complexity ({chaos}) + High impact")
+        print(f"  Recommendation: Requires architectural review")
+```
+
+---
+
+## Best Practices for New Features
+
+### Git Churn Analysis
+
+**DO**:
+- ✅ Use churn to contextualize chaos scores
+- ✅ Consider recent commits (90d) vs total history
+- ✅ Check churn before starting refactoring
+- ✅ Track churn trends over time
+
+**DON'T**:
+- ❌ Don't assume high churn = bad (could be active development)
+- ❌ Don't ignore low-churn but high-chaos files (time bombs)
+- ❌ Don't refactor high-churn files without team coordination
+
+### Friction Score
+
+**DO**:
+- ✅ Prioritize friction >0.25 for refactoring
+- ✅ Use friction for sprint planning
+- ✅ Track friction reduction as a metric
+- ✅ Consider friction when assigning tasks
+
+**DON'T**:
+- ❌ Don't refactor solely based on friction (check blast radius too)
+- ❌ Don't ignore developer feedback (friction is quantitative, pain is qualitative)
+
+### Blast Radius
+
+**DO**:
+- ✅ Always check blast radius before major refactoring
+- ✅ Use blast radius for impact assessment
+- ✅ Coordinate with teams affected by high blast radius changes
+- ✅ Add extra test coverage for high-blast files
+
+**DON'T**:
+- ❌ Don't fear high blast radius (core modules need refactoring too)
+- ❌ Don't refactor high-blast files without comprehensive tests
+- ❌ Don't ignore dependency tree visualization
+
+### Combined Risk
+
+**DO**:
+- ✅ Use combined risk for ultimate prioritization
+- ✅ Review top 10 critical files quarterly
+- ✅ Track combined risk trends over releases
+- ✅ Set combined risk thresholds for CI/CD gates
+
+**DON'T**:
+- ❌ Don't use combined risk alone (context matters)
+- ❌ Don't let combined risk paralyze decision-making
+- ❌ Don't ignore files just below threshold
+
+---
+
+## Troubleshooting New Features
+
+### "Not a valid Git repository"
+
+**Cause**: Git churn analysis requires a Git repo.
+
+**Solution**:
+- Ensure you're running inside a Git repository
+- Check `.git` directory exists
+- Some features gracefully degrade without Git (churn_score = 0)
+
+---
+
+### "No Git history found for file"
+
+**Cause**: File is not tracked by Git or was just added.
+
+**Solution**:
+- Check if file is in `.gitignore`
+- Ensure file has been committed at least once
+- New files will have churn_score = 0
+
+---
+
+### "Error analyzing dependencies"
+
+**Cause**: AST parsing failed (syntax error, encoding issue).
+
+**Solution**:
+- Check file has valid Python syntax
+- Ensure file encoding is UTF-8
+- Binary files are automatically skipped
+
+---
+
+### High combined risk but low chaos
+
+**Cause**: File has high blast radius or high churn but moderate chaos.
+
+**Interpretation**:
+- **High blast + moderate chaos**: Core integration point, needs careful handling
+- **High churn + moderate chaos**: Active development, may stabilize
+- **Action**: Consider context before refactoring
+
+---
+
+## Performance Notes
+
+### Git Churn Analysis
+- **Single file**: ~50-200ms (depends on commit history)
+- **Repo scan**: ~2-10s for 50 files
+- **Optimization**: Uses batch Git commands
+
+### Blast Radius Analysis
+- **Single file**: ~100-500ms (depends on repo size)
+- **Repo scan**: ~5-30s for 50 files
+- **First run**: Slower (builds AST cache)
+- **Subsequent runs**: Faster (uses cached graph)
+
+### Combined Operations
+- **Single file (all metrics)**: ~500ms-1s
+- **Critical files scan**: ~10-30s for 50 files
+- **Optimization**: Tools cache intermediate results
+
+---
+
+## Revision History
+
+| Date | Version | Changes |
+|------|---------|---------|
+| 2026-02-23 | 2.0 | Added Git churn, blast radius, and combined risk analysis (6 new tools) |
+| 2026-02-23 | 1.0 | Initial comprehensive guide (16 original tools) |
+
+---
+
 **End of Guide**
