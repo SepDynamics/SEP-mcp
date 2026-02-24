@@ -6,9 +6,9 @@ All test scripts and benchmarks for the Manifold MCP server.
 
 | File | Purpose |
 |---|---|
-| [`test_mcp_tools.py`](test_mcp_tools.py) | Comprehensive MCP tool validation (all 20 tools) |
-| [`test_sidecar.py`](test_sidecar.py) | Unit tests for the sidecar module |
-| [`conftest.py`](conftest.py) | Pytest configuration and fixtures |
+| [`test_mcp_tools.py`](test_mcp_tools.py) | Comprehensive MCP tool validation (all 20 tools, 44 tests) |
+| [`test_sidecar.py`](test_sidecar.py) | Unit tests for the sidecar encoding module |
+| [`conftest.py`](conftest.py) | Pytest configuration and path fixtures |
 
 ## Benchmarks
 
@@ -20,25 +20,44 @@ All test scripts and benchmarks for the Manifold MCP server.
 ## Running Tests
 
 ```bash
-# Run all tests
-pytest
+# Run all tests (use the project virtualenv)
+.venv/bin/python -m pytest tests/ -v
 
-# Run specific test file
-pytest tests/test_mcp_tools.py
+# Run MCP tool validation only
+.venv/bin/python -m pytest tests/test_mcp_tools.py -v
+
+# Run sidecar unit tests only
+.venv/bin/python -m pytest tests/test_sidecar.py -v
 
 # Run benchmarks
-python tests/benchmark_memory.py
-python tests/benchmark_scope.py
+.venv/bin/python tests/benchmark_memory.py
+.venv/bin/python tests/benchmark_scope.py
 ```
 
-## Test Coverage
+## Test Coverage (20 Tools)
 
-- **Indexing**: ingest, stats, file listing, watcher
-- **Search**: keyword, regex, structural similarity
-- **Chaos**: analysis, scanning, prediction, visualization
-- **Git**: churn analysis
-- **Dependencies**: blast radius, combined risk
-- **Verification**: snippet validation, signature computation
-- **Memory**: fact injection/removal
+| Category | Tools Tested |
+|---|---|
+| **Indexing & Monitoring** | `ingest_repo`, `get_index_stats`, `start_watcher` |
+| **Search & Retrieval** | `search_code`, `get_file`, `list_indexed_files`, `get_file_signature`, `search_by_structure` |
+| **Structural Analysis** | `compute_signature`, `verify_snippet` |
+| **Chaos Detection** | `analyze_code_chaos`, `batch_chaos_scan`, `predict_structural_ejection`, `visualize_manifold_trajectory`, `cluster_codebase_structure` |
+| **Dependency & Risk** | `analyze_blast_radius`, `compute_combined_risk`, `scan_critical_files` |
+| **Working Memory** | `inject_fact`, `remove_fact` |
 
-All tests automatically validated in [`../reports/mcp_tool_report.md`](../reports/mcp_tool_report.md).
+## Test Structure
+
+Tests are organized into class-based groups matching the tool categories:
+
+- `TestIndexingAndMonitoring` — Index lifecycle and watcher validation
+- `TestSearchAndRetrieval` — File search, retrieval, and structural lookup
+- `TestStructuralAnalysis` — Signature computation and snippet verification
+- `TestChaosDetection` — Chaos metrics, batch scanning, visualization output
+- `TestDependencyAndRisk` — Blast radius, combined risk, critical file scanning
+- `TestWorkingMemory` — Fact injection/removal lifecycle
+- `TestWatcherIntegration` — Filesystem watcher file creation/cleanup
+- `TestToolInventory` — Meta-test ensuring all 20 tools are imported and callable
+
+---
+
+All test results are automatically captured in [`../reports/mcp_tool_report.md`](../reports/mcp_tool_report.md).

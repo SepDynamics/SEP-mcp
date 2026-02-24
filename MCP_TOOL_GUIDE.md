@@ -460,22 +460,21 @@ Formula:
 
 ### `scan_critical_files`
 
-Repository-wide scan for the highest combined risk files. 
+Repository-wide scan for the highest combined risk files.
 
-**Performance Note**: Unlike `batch_chaos_scan` which runs in continuous O(1) time simply by reading memory, this tool computes AST logic and full Git history. On massive repositories (>10,000 files), this introduces severe $O(N)$ execution bottlenecks. Use the high-speed chaos scanner first before falling back to full critical scans.
+**Performance Note**: Unlike `batch_chaos_scan` which runs in continuous O(1) time simply by reading memory, this tool computes AST logic and blast radius analysis. On massive repositories (>10,000 files), this introduces $O(N)$ execution cost. Use the high-speed chaos scanner first before falling back to full critical scans.
 
 | Parameter | Default | Description |
 |---|---|---|
 | `pattern` | `"*.py"` | Glob pattern to filter files |
-| `min_combined_risk` | `0.30` | Minimum risk threshold |
 | `max_files` | `20` | Maximum files to return |
 
 ```
-scan_critical_files  (pattern="*.py", min_combined_risk=0.20)
+scan_critical_files  (pattern="*.py", max_files=10)
 ```
 
 ```
-⚠️ Critical Files (Top 3 with risk ≥0.20):
+⚠️ Critical Files (Top 3):
 
   [    HIGH] 0.370 | mcp_server.py
              chaos=0.386, blast= 6
@@ -585,7 +584,7 @@ remove_fact  (fact_id="api_conventions")
 1. ingest_repo        (root_dir=".", clear_first=true, compute_chaos=true)
 2. get_index_stats    (verify ingestion)
 3. batch_chaos_scan   (pattern="*.py", max_files=30)
-4. scan_critical_files (pattern="*.py", min_combined_risk=0.25)
+4. scan_critical_files (pattern="*.py", max_files=20)
 5. For the top file:
    - analyze_code_chaos
    - analyze_blast_radius
@@ -604,7 +603,7 @@ remove_fact  (fact_id="api_conventions")
 ### Sprint Planning
 
 ```
-1. scan_critical_files       (min_combined_risk=0.25)
+1. scan_critical_files       (pattern="*.py", max_files=10)
 2. For each candidate:
    - analyze_blast_radius (assess impact)
 3. Select 1–2 files that fit sprint capacity
@@ -724,4 +723,4 @@ This is common for algorithmic or mathematical code. Focus on files **above the 
 - **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** — Command cheat sheet
 - **[reports/react_validation_case_study.md](reports/react_validation_case_study.md)** — React 15.0 prediction study
 - **[reports/true_validation_study.md](reports/true_validation_study.md)** — Langchain ROC analysis
-- **[scripts/tests/test_mcp_tools.py](scripts/tests/test_mcp_tools.py)** — Automated test suite
+- **[tests/test_mcp_tools.py](tests/test_mcp_tools.py)** — Automated test suite (44 tests covering all 20 tools)

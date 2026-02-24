@@ -15,7 +15,7 @@ Signal-first pipeline (identical to the chaos proxy):
 6. Hazard gating (collapse detection) on every retrieval
 
 Tools exposed (20 total):
-  Core Analysis:
+  Indexing & Monitoring:
     • ingest_repo          – stream-ingest repo into Valkey (text + sigs + chaos)
     • get_index_stats      – Valkey db health + doc count
     • start_watcher        – live filesystem watcher for IDE saves
@@ -36,11 +36,9 @@ Tools exposed (20 total):
     • batch_chaos_scan     – GPU-style batch validation
     • predict_structural_ejection – maintainability forecast
     • visualize_manifold_trajectory – 4-panel dashboard
+    • cluster_codebase_structure – K-Means structural grouping
 
-  Git Integration (NEW):
-    • analyze_git_churn    – Git commit frequency and churn metrics
-
-  Dependency Analysis:
+  Dependency & Risk:
     • analyze_blast_radius – AST-based impact analysis
     • compute_combined_risk – chaos × blast_radius ultimate risk
     • scan_critical_files  – ultimate risk assessment
@@ -1969,8 +1967,6 @@ def scan_critical_files(
     rels = []
     for key in v.r.scan_iter(f"{FILE_HASH_PREFIX}*", count=500):
         rel = key[len(FILE_HASH_PREFIX) :]
-        from fnmatch import fnmatch
-
         if pattern != "*" and not fnmatch(rel, pattern):
             continue
         keys.append(key)

@@ -73,7 +73,7 @@ compute_combined_risk   (path="target_file.py")
 
 ---
 
-## Tool Reference (21 Tools)
+## Tool Reference (20 Tools)
 
 All tools are documented with parameters, examples, and workflows in **[MCP_TOOL_GUIDE.md](MCP_TOOL_GUIDE.md)**. Quick command reference in **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)**.
 
@@ -92,7 +92,6 @@ All tools are documented with parameters, examples, and workflows in **[MCP_TOOL
 | `search_code` | Keyword or regex search across all indexed files with context |
 | `get_file_signature` | Structural fingerprint (coherence/stability/entropy) for a file |
 | `search_by_structure` | Find files with similar structural signatures |
-| `cluster_codebase_structure` | Cluster the codebase using Coherence/Entropy structural groupings |
 
 ### Chaos Analysis
 | Tool | Purpose |
@@ -101,7 +100,7 @@ All tools are documented with parameters, examples, and workflows in **[MCP_TOOL
 | `batch_chaos_scan` | Rank all files by chaos score (highest risk first) |
 | `predict_structural_ejection` | Forecast when a file becomes unmaintainable |
 | `visualize_manifold_trajectory` | Generate a 4-panel PNG dashboard of chaos dynamics (incl. 3D Phase Space) |
-| `visualize_manifold_3d.py` | Generate an interactive 3D probability volume scatter plot (C, E, Chaos) |
+| `cluster_codebase_structure` | K-Means clustering of files by structural signatures (Coherence × Entropy) |
 
 ### Dependency & Combined Risk
 | Tool | Purpose |

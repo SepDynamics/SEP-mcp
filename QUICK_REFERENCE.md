@@ -36,7 +36,7 @@ visualize_manifold_trajectory  path="mcp_server.py"
 ```
 analyze_blast_radius    path="src/manifold/sidecar.py"
 compute_combined_risk   path="src/manifold/sidecar.py"
-scan_critical_files     pattern="*.py"  min_combined_risk=0.30  max_files=20
+scan_critical_files     pattern="*.py"  max_files=20
 ```
 
 ## Verification & Memory
@@ -70,7 +70,7 @@ remove_fact          fact_id="api_rules"
 
 ### Sprint Planning
 ```
-1. scan_critical_files  (min_combined_risk=0.25)
+1. scan_critical_files  (pattern="*.py", max_files=10)
 2. analyze_blast_radius for each candidate
 ```
 
