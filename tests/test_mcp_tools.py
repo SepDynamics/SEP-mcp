@@ -112,7 +112,9 @@ INJECT_FACT_TEXT = (
 @pytest.fixture(scope="module", autouse=True)
 def ensure_ingested():
     """Ensure the repository is ingested before running tests."""
-    ingest_repo(root_dir=".", compute_chaos=True, clear_first=False, lite=True)
+    ingest_repo(
+        root_dir=str(REPO_ROOT), compute_chaos=True, clear_first=False, lite=True
+    )
 
 
 # ---------------------------------------------------------------------------

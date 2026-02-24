@@ -110,6 +110,22 @@ def _get_valkey():
     return _valkey_wm
 
 
+def _get_index_root() -> Path:
+    """Get the root directory of the current index from Valkey metadata."""
+    v = _get_valkey()
+    if v.ping():
+        meta_raw = v.r.get(META_KEY)
+        if meta_raw:
+            try:
+                meta = json.loads(meta_raw)
+                root = meta.get("root")
+                if root:
+                    return Path(root)
+            except Exception:
+                pass
+    return WORKSPACE_ROOT
+
+
 def _get_ast_analyzer():
     """Get or create the AST dependency analyzer singleton.
 
@@ -117,10 +133,11 @@ def _get_ast_analyzer():
     Call invalidate_ast_cache() to rebuild (e.g., after file changes).
     """
     global _ast_analyzer
-    if _ast_analyzer is None:
+    current_root = _get_index_root()
+    if _ast_analyzer is None or _ast_analyzer.repo_root != current_root:
         from src.manifold.ast_deps import ASTDependencyAnalyzer
 
-        _ast_analyzer = ASTDependencyAnalyzer(WORKSPACE_ROOT)
+        _ast_analyzer = ASTDependencyAnalyzer(current_root)
         _ast_analyzer.build_dependency_graph()
         _ast_analyzer.analyze_all()
     return _ast_analyzer
@@ -366,18 +383,10 @@ def ingest_repo(
     if not v.ping():
         return "❌ Valkey not reachable on localhost:6379."
 
-    if os.path.isabs(root_dir):
-        try:
-            # Try to make it relative to the workspace, otherwise use as-is but warn
-            rel = os.path.relpath(root_dir, WORKSPACE_ROOT)
-            if rel.startswith("..") and not root_dir.startswith(str(WORKSPACE_ROOT)):
-                target = Path(root_dir)
-            else:
-                target = WORKSPACE_ROOT / rel
-        except ValueError:
-            target = Path(root_dir)
-    else:
-        target = WORKSPACE_ROOT / root_dir
+    target = Path(root_dir)
+    if not target.is_absolute():
+        target = _get_index_root() / root_dir
+    target = target.resolve()
 
     if not target.exists():
         return f"❌ Directory not found: {target}"
@@ -415,7 +424,7 @@ def ingest_repo(
 
         try:
             # Strictly constrain ingestion paths to relative structure for absolute system path requests
-            rel = os.path.relpath(path, WORKSPACE_ROOT)
+            rel = os.path.relpath(path, target)
         except ValueError:
             rel = str(path)
 
@@ -648,7 +657,8 @@ def get_file(
     Returns the full text content of the file as stored during ingest.
     Use list_indexed_files() first to discover available paths.
     """
-    path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
+    current_root = _get_index_root()
+    path = os.path.relpath(path, current_root) if os.path.isabs(path) else path
     v = _get_valkey()
     if not v.ping():
         return "❌ Valkey not reachable."
@@ -1042,7 +1052,7 @@ def start_watcher(
     except ImportError:
         return "❌ watchdog not installed. Run: pip install watchdog"
 
-    target = WORKSPACE_ROOT / watch_dir
+    target = _get_index_root() / watch_dir
     if not target.exists():
         return f"❌ Directory not found: {target}"
 
@@ -1097,7 +1107,7 @@ def start_watcher(
             if not event.is_directory:
                 path = Path(event.src_path)
                 try:
-                    rel = os.path.relpath(path, WORKSPACE_ROOT)
+                    rel = os.path.relpath(path, _get_index_root())
                 except ValueError:
                     return
                 vk = _get_valkey()
@@ -1245,7 +1255,8 @@ def analyze_code_chaos(
     Computes chaos score, entropy, coherence, and collapse risk from the
     structural byte-stream analysis.
     """
-    path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
+    current_root = _get_index_root()
+    path = os.path.relpath(path, current_root) if os.path.isabs(path) else path
     v = _get_valkey()
     raw = v.raw_r.hget(f"{FILE_HASH_PREFIX}{path}", "doc")
     if not raw:
@@ -1367,7 +1378,8 @@ def predict_structural_ejection(
 
     Uses the chaos score to estimate structural stability over time.
     """
-    path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
+    current_root = _get_index_root()
+    path = os.path.relpath(path, current_root) if os.path.isabs(path) else path
     v = _get_valkey()
     chaos_data = v.raw_r.hget(f"{FILE_HASH_PREFIX}{path}", "chaos")
     if not chaos_data:
@@ -1418,7 +1430,8 @@ def visualize_manifold_trajectory(
 
     Saves a PNG to reports/ and returns the metrics summary + file path.
     """
-    path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
+    current_root = _get_index_root()
+    path = os.path.relpath(path, current_root) if os.path.isabs(path) else path
 
     v = _get_valkey()
     if not v.ping():
@@ -1608,7 +1621,8 @@ def visualize_manifold_trajectory(
     plt.tight_layout(rect=[0, 0, 1, 0.93])
 
     # Save to reports/
-    report_dir = WORKSPACE_ROOT / "reports"
+    current_root = _get_index_root()
+    report_dir = current_root / "reports"
     report_dir.mkdir(exist_ok=True)
     safe_name = re.sub(r"[^\w.]", "_", path)
     out_path = report_dir / f"manifold_trajectory_{safe_name}.png"
@@ -1623,7 +1637,7 @@ def visualize_manifold_trajectory(
     )
 
     return (
-        f"📊 4-Panel Manifold Dashboard saved to: {out_path.relative_to(WORKSPACE_ROOT)}\n\n"
+        f"📊 4-Panel Manifold Dashboard saved to: {out_path.relative_to(current_root)}\n\n"
         f"  File                : {path}\n"
         f"  Windows analyzed    : {n}\n"
         f"  Avg Chaos Score     : {avg_hazard:.3f}\n"
@@ -1822,7 +1836,8 @@ def analyze_blast_radius(
     Shows how many files would be impacted if this file were changed.
     Uses AST analysis to trace import dependencies.
     """
-    path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
+    current_root = _get_index_root()
+    path = os.path.relpath(path, current_root) if os.path.isabs(path) else path
 
     try:
         # Use cached AST analyzer singleton
@@ -1876,7 +1891,8 @@ def compute_combined_risk(
 
     This is the ultimate metric for identifying the most critical files to refactor.
     """
-    path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
+    current_root = _get_index_root()
+    path = os.path.relpath(path, current_root) if os.path.isabs(path) else path
 
     # Get chaos score
     v = _get_valkey()
