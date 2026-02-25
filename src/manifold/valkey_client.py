@@ -22,6 +22,7 @@ class ValkeyWorkingMemory:
         self.raw_r = valkey.Redis(**kwargs)
         self.doc_prefix = "manifold:docs:"
         self.index_key = "manifold:active_index"
+        self.semantic_index_key = "manifold:semantic_index"
 
     def ping(self) -> bool:
         """Check if Valkey is alive."""
@@ -117,6 +118,31 @@ class ValkeyWorkingMemory:
     def invalidate_index(self) -> None:
         """Clear the active index cache to force a rebuild on next access."""
         self.r.delete(self.index_key)
+        self.r.delete(self.semantic_index_key)
+
+    def store_semantic_index(self, serialized_data: bytes) -> None:
+        """Cache the computed SemanticIndex in Valkey."""
+        if serialized_data:
+            # We store the compressed zstd payload as base64
+            b64_encoded = base64.b64encode(serialized_data).decode("ascii")
+            self.r.set(self.semantic_index_key, b64_encoded)
+
+    def get_semantic_index(self) -> Optional["SemanticIndex"]:
+        """Retrieve the cached SemanticIndex from Valkey."""
+        b64_data = self.r.get(self.semantic_index_key)
+        if not b64_data:
+            return None
+
+        try:
+            from .semantic import SemanticIndex
+
+            compressed = base64.b64decode(b64_data)
+            sem_idx = SemanticIndex()
+            sem_idx.deserialize(compressed)
+            return sem_idx
+        except Exception as e:
+            print(f"Failed to load semantic index: {e}")
+            return None
 
     def clear_all(self) -> None:
         """Wipe the entire Working Memory (for testing)."""

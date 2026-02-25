@@ -172,7 +172,13 @@ class TestIndexingAndMonitoring:
             root_dir=str(REPO_ROOT), compute_chaos=True, clear_first=False, lite=True
         )
         assert "✅ Ingest complete" in result
-        for field in ["Text files", "Binary files", "Signatures", "Avg chaos", "High-risk"]:
+        for field in [
+            "Text files",
+            "Binary files",
+            "Signatures",
+            "Avg chaos",
+            "High-risk",
+        ]:
             assert field in result, f"Missing field '{field}' in ingest output"
 
     def test_ingest_repo_nonexistent_directory(self):
@@ -285,7 +291,9 @@ class TestSearchAndRetrieval:
             parts = sig.split("_")
             for part in parts:
                 val = float(part[1:])
-                assert 0.0 <= val <= 1.0, f"Signature component {part} out of [0,1] range"
+                assert (
+                    0.0 <= val <= 1.0
+                ), f"Signature component {part} out of [0,1] range"
 
     def test_search_by_structure_finds_self(self):
         """Searching by a file's own signature should find itself."""
@@ -334,7 +342,6 @@ class TestSearchAndRetrieval:
         )
 
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 # 3. STRUCTURAL ANALYSIS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -380,7 +387,8 @@ class TestStructuralAnalysis:
         """Completely fabricated code should fail verification."""
         alien = (
             "x" * 600
-            + "\ndef fake_function_zzzz():\n    return 'absolutely not in codebase'\n" * 10
+            + "\ndef fake_function_zzzz():\n    return 'absolutely not in codebase'\n"
+            * 10
         )
         result = verify_snippet(snippet=alien, coverage_threshold=0.5)
         assert "❌" in result or "0.00%" in result
@@ -400,7 +408,13 @@ class TestChaosDetection:
         assert "❌" not in result, f"Chaos analysis failed: {result}"
 
         # Verify all metric labels present
-        for label in ["Chaos Score", "Entropy", "Coherence", "Collapse Risk", "Windows analyzed"]:
+        for label in [
+            "Chaos Score",
+            "Entropy",
+            "Coherence",
+            "Collapse Risk",
+            "Windows analyzed",
+        ]:
             assert label in result, f"Missing '{label}' in chaos output"
 
         # Parse metrics — note: output uses "Chaos Score (fluctuation_persistence) : 0.399"
@@ -408,7 +422,9 @@ class TestChaosDetection:
         chaos = _parse_float_field(result, "Chaos Score")
         entropy = _parse_float_field(result, "Entropy")
         coherence = _parse_float_field(result, "Coherence")
-        assert chaos is not None and 0.0 <= chaos <= 1.0, f"Chaos parse failed from: {result}"
+        assert (
+            chaos is not None and 0.0 <= chaos <= 1.0
+        ), f"Chaos parse failed from: {result}"
         assert entropy is not None and 0.0 <= entropy <= 1.0
         assert coherence is not None and 0.0 <= coherence <= 1.0
 
@@ -448,20 +464,22 @@ class TestChaosDetection:
         result = predict_structural_ejection("nonexistent_file_99999.py")
         assert "❌" in result
 
-    def test_visualize_manifold_trajectory_creates_png(self):
-        """Visualization generates a valid PNG dashboard."""
+    def test_visualize_manifold_trajectory_creates_html(self):
+        """Visualization generates a valid HTML dashboard."""
         result = visualize_manifold_trajectory("mcp_server.py")
         assert "❌" not in result, f"Visualization failed: {result}"
         assert "4-Panel Manifold Dashboard saved to:" in result
 
         # Verify file was created
         reports_dir = REPO_ROOT / "reports"
-        pngs = list(reports_dir.glob("manifold_trajectory_*mcp_server*.png"))
-        assert len(pngs) > 0, "No PNG file found in reports/"
+        htmls = list(reports_dir.glob("manifold_trajectory_*mcp_server*.html"))
+        assert len(htmls) > 0, "No HTML file found in reports/"
 
         # Verify file is non-trivial (>10 KB indicates real plot data)
-        for png in pngs:
-            assert png.stat().st_size > 10_000, f"PNG too small ({png.stat().st_size} bytes)"
+        for html in htmls:
+            assert (
+                html.stat().st_size > 10_000
+            ), f"HTML too small ({html.stat().st_size} bytes)"
 
     def test_visualize_manifold_trajectory_output_metrics(self):
         """Dashboard output contains all expected metric labels."""
@@ -514,7 +532,13 @@ class TestDependencyAndRisk:
         """Blast radius analysis returns all expected fields."""
         result = analyze_blast_radius("mcp_server.py")
         assert "❌" not in result, f"Blast radius failed: {result}"
-        for field in ["Blast Radius", "Dependency Depth", "Is Core Module", "Imports", "Imported By"]:
+        for field in [
+            "Blast Radius",
+            "Dependency Depth",
+            "Is Core Module",
+            "Imports",
+            "Imported By",
+        ]:
             assert field in result, f"Missing '{field}' in blast radius output"
 
     def test_analyze_blast_radius_nonexistent(self):
@@ -526,7 +550,13 @@ class TestDependencyAndRisk:
         """Combined risk returns score, level, and formula."""
         result = compute_combined_risk("mcp_server.py")
         assert "❌" not in result, f"Combined risk failed: {result}"
-        for field in ["Combined Risk", "Risk Level", "Formula", "Chaos Score", "Blast Radius"]:
+        for field in [
+            "Combined Risk",
+            "Risk Level",
+            "Formula",
+            "Chaos Score",
+            "Blast Radius",
+        ]:
             assert field in result, f"Missing '{field}' in combined risk output"
 
     def test_compute_combined_risk_levels(self):
