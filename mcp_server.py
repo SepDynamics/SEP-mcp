@@ -14,7 +14,7 @@ Signal-first pipeline (identical to the chaos proxy):
 5. Entropy + coherence as secondary metrics
 6. Hazard gating (collapse detection) on every retrieval
 
-Tools exposed (20 total):
+Tools exposed (21 total):
   Indexing & Monitoring:
     • ingest_repo          – stream-ingest repo into Valkey (text + sigs + chaos)
     • get_index_stats      – Valkey db health + doc count
@@ -25,6 +25,7 @@ Tools exposed (20 total):
     • get_file             – read a single indexed file
     • list_indexed_files   – list indexed paths (glob filter)
     • search_by_structure  – find structurally similar files
+    • search_by_signature_sequence – find files containing a contiguous signature sequence
 
   Structural Analysis:
     • compute_signature    – compress text to manifold signatures
@@ -99,7 +100,7 @@ _valkey_wm = None
 _ast_analyzer = None
 
 
-def _get_valkey():
+def _get_valkey_wm():
     global _valkey_wm
     if _valkey_wm is None:
         from src.manifold.valkey_client import ValkeyWorkingMemory
@@ -110,7 +111,7 @@ def _get_valkey():
 
 def _get_index_root() -> Path:
     """Get the root directory of the current index from Valkey metadata."""
-    v = _get_valkey()
+    v = _get_valkey_wm()
     if v.ping():
         meta_raw = v.r.get(META_KEY)
         if meta_raw:
@@ -189,7 +190,7 @@ EXCLUDE_DIRS = {
     "reports",
 }
 
-EXCLUDE_PATTERNS = {
+EXCLUDE_PATTERNSS = {
     "*.pyc",
     "*.pyo",
     "*.so",
@@ -250,7 +251,7 @@ def _should_skip(path: Path) -> bool:
         if part in EXCLUDE_DIRS:
             return True
     name = path.name
-    for pat in EXCLUDE_PATTERNS:
+    for pat in EXCLUDE_PATTERNSS:
         if fnmatch(name, pat):
             return True
     return False
@@ -377,7 +378,7 @@ def ingest_repo(
     We extract the structural 'kinetic energy variance' and compute the
     exact chaos score used in the 3-body proxy.
     """
-    v = _get_valkey()
+    v = _get_valkey_wm()
     if not v.ping():
         return "❌ Valkey not reachable on localhost:6379."
 
@@ -549,7 +550,7 @@ def search_code(
     Scans all text documents stored in Valkey and returns matching
     file paths with surrounding context lines.
     """
-    v = _get_valkey()
+    v = _get_valkey_wm()
     if not v.ping():
         return "❌ Valkey not reachable."
 
@@ -657,7 +658,7 @@ def get_file(
     """
     current_root = _get_index_root()
     path = os.path.relpath(path, current_root) if os.path.isabs(path) else path
-    v = _get_valkey()
+    v = _get_valkey_wm()
     if not v.ping():
         return "❌ Valkey not reachable."
 
@@ -703,7 +704,7 @@ def list_indexed_files(
 
     Returns a newline-separated list of indexed file paths matching the pattern.
     """
-    v = _get_valkey()
+    v = _get_valkey_wm()
     if not v.ping():
         return "❌ Valkey not reachable."
 
@@ -739,7 +740,7 @@ def get_index_stats() -> str:
 
     Shows documents, signatures, chaos profiles, memory usage, and last ingest time.
     """
-    v = _get_valkey()
+    v = _get_valkey_wm()
     if not v.ping():
         return "❌ Valkey not reachable."
 
@@ -855,7 +856,7 @@ def verify_snippet(
     if snippet_bytes < 512:
         return f"❌ Snippet too short ({snippet_bytes} bytes). Need ≥512."
 
-    v = _get_valkey()
+    v = _get_valkey_wm()
     index = v.get_or_build_index()
     if index is None:
         return "❌ No manifold index available. Run ingest_repo first."
@@ -925,7 +926,7 @@ def get_file_signature(
     Returns the c/s/e signature string computed from the first 512 bytes.
     """
     path = os.path.relpath(path, WORKSPACE_ROOT) if os.path.isabs(path) else path
-    v = _get_valkey()
+    v = _get_valkey_wm()
     if not v.ping():
         return "❌ Valkey not reachable."
 
@@ -980,7 +981,7 @@ def search_by_structure(
         return f"❌ Invalid signature format. Expected 'cX.XXX_sX.XXX_eX.XXX'."
     tc, ts, te = float(m.group(1)), float(m.group(2)), float(m.group(3))
 
-    v = _get_valkey()
+    v = _get_valkey_wm()
     if not v.ping():
         return "❌ Valkey not reachable."
 
@@ -1016,6 +1017,190 @@ def search_by_structure(
 
 
 # ===================================================================
+# TOOL: search_by_signature_sequence
+# ===================================================================
+@mcp.tool()
+def search_by_signature_sequence(
+    text: Annotated[
+        str,
+        Field(
+            description="Raw text snippet to encode into signatures for sequence search"
+        ),
+    ],
+    min_signatures: Annotated[
+        int, Field(description="Minimum number of signatures required (default 3)")
+    ] = 3,
+    trim_first_last: Annotated[
+        bool,
+        Field(
+            description="Trim first and last signatures before searching (default true)"
+        ),
+    ] = True,
+    max_results: Annotated[
+        int, Field(description="Maximum number of matching documents to return")
+    ] = 20,
+    scope: Annotated[
+        str,
+        Field(description="Glob pattern to limit search (e.g. 'src/*')"),
+    ] = "*",
+) -> str:
+    """Search for files containing a contiguous signature sequence derived from a snippet.
+
+    Encodes the snippet to signatures, optionally trims first/last signatures, then
+    scans indexed document windows for contiguous sequence matches.
+    """
+    if not _ensure_encoder():
+        return "❌ Native encoder not available."
+
+    snippet_bytes = len(text.encode("utf-8", errors="replace"))
+    if snippet_bytes < 512:
+        return f"❌ Snippet too short ({snippet_bytes} bytes). Need ≥512."
+
+    v = _get_valkey_wm()
+    index = v.get_or_build_index()
+    if index is None:
+        return "❌ No manifold index available. Run ingest_repo first."
+
+    from src.manifold.sidecar import encode_text
+
+    encoded = encode_text(
+        text,
+        window_bytes=512,
+        stride_bytes=384,
+        precision=3,
+        use_native=True,
+    )
+    signatures = [w.signature for w in encoded.windows]
+    if trim_first_last and len(signatures) > 2:
+        signatures = signatures[1:-1]
+
+    if len(signatures) < min_signatures:
+        return (
+            f"❌ Not enough signatures in snippet ({len(signatures)}). "
+            f"Need ≥{min_signatures}."
+        )
+
+    if len(signatures) < 1:
+        return "❌ Signature sequence is empty after trimming."
+
+    documents = index.documents if isinstance(index.documents, dict) else {}
+    docs_have_windows = any(
+        isinstance(doc, dict) and isinstance(doc.get("windows"), list)
+        for doc in documents.values()
+    )
+
+    occurrences_map = None
+    if not docs_have_windows:
+        occurrences_map = {}
+
+        signatures_index = {
+            sig: entry
+            for sig, entry in (
+                index.signatures if isinstance(index.signatures, dict) else {}
+            ).items()
+        }
+
+        for sig, entry in signatures_index.items():
+            if not isinstance(entry, dict):
+                continue
+            occs = entry.get("occurrences", [])
+            if not isinstance(occs, list):
+                continue
+            for occ in occs:
+                if not isinstance(occ, dict):
+                    continue
+                doc_id = occ.get("doc_id")
+                if not doc_id:
+                    continue
+                occ_entry = (
+                    int(occ.get("byte_start", 0) or 0),
+                    str(sig),
+                    int(occ.get("byte_end", 0) or 0),
+                )
+                occurrences_map.setdefault(str(doc_id), []).append(occ_entry)
+
+    matches = []
+
+    for doc_id, doc_meta in documents.items():
+        if scope != "*" and not fnmatch(doc_id, scope):
+            continue
+
+        windows = doc_meta.get("windows") if isinstance(doc_meta, dict) else None
+
+        doc_sigs = []
+        if isinstance(windows, list):
+            doc_sigs = [
+                str(w.get("signature", "")) for w in windows if isinstance(w, dict)
+            ]
+        elif occurrences_map is not None:
+            occs = occurrences_map.get(str(doc_id), [])
+            occs.sort(key=lambda item: item[0])  # sort by byte start
+            doc_sigs = [sig for _, sig, _ in occs]
+
+        if len(doc_sigs) < len(signatures):
+            continue
+
+        seq_len = len(signatures)
+        for i in range(0, len(doc_sigs) - seq_len + 1):
+            if doc_sigs[i : i + seq_len] == signatures:
+                if isinstance(windows, list):
+                    start_win = windows[i]
+                    end_win = windows[i + seq_len - 1]
+                    window_start = (
+                        start_win.get("window_index") if isinstance(start_win, dict) else None
+                    )
+                    window_end = (
+                        end_win.get("window_index") if isinstance(end_win, dict) else None
+                    )
+
+                    byte_start = (
+                        start_win.get("byte_start") if isinstance(start_win, dict) else None
+                    )
+                    byte_end = (
+                        end_win.get("byte_end") if isinstance(end_win, dict) else None
+                    )
+                else:
+                    occs = occurrences_map.get(str(doc_id), []) if occurrences_map else []
+
+                    start_occ = occs[i] if i < len(occs) else (None, None, None)
+                    end_occ = (
+                        occs[i + seq_len - 1]
+                        if i + seq_len - 1 < len(occs)
+                        else (None, None, None)
+                    )
+
+                    window_start = i
+                    window_end = i + seq_len - 1
+                    byte_start = start_occ[0]
+                    byte_end = end_occ[2]
+
+                match_info = {
+                    "doc_id": doc_id,
+                    "window_start": window_start,
+                    "window_end": window_end,
+                    "byte_start": byte_start,
+                    "byte_end": byte_end,
+                }
+                matches.append(match_info)
+                break
+
+        if len(matches) >= max_results:
+            break
+
+    if not matches:
+        return "No contiguous signature sequence matches found."
+
+    lines = [
+        f"🔎 Signature sequence matches (len={len(signatures)}) {'(trimmed)' if trim_first_last else ''}:"
+    ]
+    for match in matches:
+        lines.append(
+            f"  {match['doc_id']} | windows {match['window_start']}→{match['window_end']} | bytes {match['byte_start']}→{match['byte_end']}"
+        )
+    return "\n".join(lines)
+
+
+# ===================================================================
 # TOOL: start_watcher
 # ===================================================================
 _active_observer = None
@@ -1040,7 +1225,7 @@ def start_watcher(
     if _active_observer is not None:
         return "✅ Watcher already running."
 
-    v = _get_valkey()
+    v = _get_valkey_wm()
     if not v.ping():
         return "❌ Valkey not reachable."
 
@@ -1057,7 +1242,7 @@ def start_watcher(
     cap = max_bytes_per_file
 
     class _Handler(FileSystemEventHandler):
-        def _ingest(self, src_path: str) -> None:
+        def _ingest(self, src_path):
             path = Path(src_path)
             if not path.is_file() or _should_skip(path):
                 return
@@ -1069,27 +1254,32 @@ def start_watcher(
                 raw = _read_capped(path, cap)
                 if not raw:
                     return
-                vk = _get_valkey()
-                hash_key = f"{FILE_HASH_PREFIX}{rel}"
-                fields = {}
 
-                if _is_text(path):
-                    fields["doc"] = _compress(raw)
-                else:
-                    digest = hashlib.sha256(raw).hexdigest()
-                    fields["doc"] = f"[BINARY sha256={digest} bytes={len(raw)}]"
+                vk = _get_valkey_wm()
+                vk.raw_r.hset(
+                    f"{FILE_HASH_PREFIX}{rel}".encode("utf-8"),
+                    mapping={b"doc": _compress(raw)},
+                )
 
                 vk.r.zadd(FILE_LIST_KEY, {rel: len(raw)})
+                # Also compute chaos profile on save
                 if len(raw) >= 512:
                     sig = _compute_sig(raw)
                     if sig:
-                        fields["sig"] = sig
-                    # Also compute chaos profile on save
+                        vk.raw_r.hset(
+                            f"{FILE_HASH_PREFIX}{rel}".encode("utf-8"),
+                            b"sig",
+                            sig,
+                        )
+
                     chaos = _compute_chaos_result(raw)
                     if chaos:
-                        fields["chaos"] = _compress(json.dumps(chaos).encode("utf-8"))
-
-                vk.r.hset(hash_key, mapping=fields)
+                        chaos_json = json.dumps(chaos).encode("utf-8")
+                        vk.raw_r.hset(
+                            f"{FILE_HASH_PREFIX}{rel}".encode("utf-8"),
+                            b"chaos",
+                            _compress(chaos_json),
+                        )
             except Exception:
                 pass
 
@@ -1105,12 +1295,11 @@ def start_watcher(
             if not event.is_directory:
                 path = Path(event.src_path)
                 try:
-                    rel = os.path.relpath(path, _get_index_root())
+                    rel = os.path.relpath(path, v.r_root)
                 except ValueError:
                     return
-                vk = _get_valkey()
-                hash_key = f"{FILE_HASH_PREFIX}{rel}"
-                vk.r.delete(hash_key)
+                vk = _get_valkey_wm()
+                vk.raw_r.delete(f"{FILE_HASH_PREFIX}{rel}".encode("utf-8"))
                 vk.r.zrem(FILE_LIST_KEY, rel)
 
     handler = _Handler()
@@ -1143,20 +1332,37 @@ def inject_fact(
     Stores the fact in Valkey and invalidates the cached index so the next
     retrieval will incorporate the new knowledge.
     """
-    v = _get_valkey()
+    v = _get_valkey_wm()
     if not v.ping():
         return "❌ Valkey not reachable."
 
-    rel = (
-        os.path.relpath(fact_id, WORKSPACE_ROOT) if os.path.isabs(fact_id) else fact_id
-    )
+    rel = fact_id
     payload = fact_text.encode("utf-8", errors="replace")
     v.raw_r.hset(
         f"{FILE_HASH_PREFIX}{rel}".encode("utf-8"), mapping={b"doc": _compress(payload)}
     )
-    v.r.zadd(FILE_LIST_KEY, {rel: len(payload)})
+
+    affected_docs = []
+
+    # Handles both lists or dict formats
+    signatures = {}
+    if isinstance(v.r_meta, list):
+        signatures = {
+            s.get("path"): str(s.get("signature")) for s in v.r_meta if s.get("path")
+        }
+    elif isinstance(v.r_meta, dict):
+        signatures = {
+            s.get("path"): str(s.get("signature")) for s in v.r_meta.values() if isinstance(s, dict) and s.get("path")
+        }
+
+    for doc_id, sig in signatures.items():
+        if re.search(f"{re.escape(rel)}", sig):
+            affected_docs.append(doc_id)
+
+    # Invalidate cache to ensure next fetch recrawls to incorporate newly injected fact from the working memory
     v.invalidate_index()
-    return f"🚀 Fact '{fact_id}' injected into the Dynamic Semantic Codebook."
+
+    return f"🚀 Fact '{fact_id}' injected into the Dynamic Semantic Codebook.\nAffected documents: {len(affected_docs)}"
 
 
 @mcp.tool()
@@ -1166,7 +1372,7 @@ def remove_fact(
     ],
 ) -> str:
     """Remove a fact from the Working Memory codebook."""
-    v = _get_valkey()
+    v = _get_valkey_wm()
     if not v.ping():
         return "❌ Valkey not reachable."
 
@@ -1183,9 +1389,9 @@ def remove_fact(
 # ===================================================================
 # CHAOS EXPANSION TOOLS (new in this version)
 # ===================================================================
-def _get_dynamic_thresholds() -> dict[str, float]:
+def _get_dynamic_thresholds():
     """Dynamically compute structural thresholds from current index percentiles."""
-    v = _get_valkey()
+    v = _get_valkey_wm()
     import numpy as np
 
     hazards = []
@@ -1220,7 +1426,7 @@ def _get_dynamic_thresholds() -> dict[str, float]:
         except Exception:
             pass
 
-    res = {
+    thresholds = {
         "chaos_low": 0.15,
         "chaos_high": 0.35,
         "coherence_low": 0.30,
@@ -1230,22 +1436,23 @@ def _get_dynamic_thresholds() -> dict[str, float]:
     }
 
     if hazards:
-        res["chaos_low"] = float(np.percentile(hazards, 33.3))
-        res["chaos_high"] = float(np.percentile(hazards, 66.6))
+        thresholds["chaos_low"] = float(np.percentile(hazards, 33.3))
+        thresholds["chaos_high"] = float(np.percentile(hazards, 66.6))
     if coherences:
-        res["coherence_low"] = float(np.percentile(coherences, 33.3))
-        res["coherence_high"] = float(np.percentile(coherences, 66.6))
+        thresholds["coherence_low"] = float(np.percentile(coherences, 33.3))
+        thresholds["coherence_high"] = float(np.percentile(coherences, 66.6))
     if entropies:
-        res["entropy_low"] = float(np.percentile(entropies, 33.3))
-        res["entropy_high"] = float(np.percentile(entropies, 66.6))
+        thresholds["entropy_low"] = float(np.percentile(entropies, 33.3))
+        thresholds["entropy_high"] = float(np.percentile(entropies, 66.6))
 
-    return res
+    return thresholds
 
 
 @mcp.tool()
 def analyze_code_chaos(
     path: Annotated[
-        str, Field(description="File path relative to repo root (e.g. 'mcp_server.py')")
+        str,
+        Field(description="File path relative to repo root (e.g. 'mcp_server.py')"),
     ],
 ) -> str:
     """Return the full ChaosResult for any indexed file – identical to three_body_demo.py.
@@ -1255,7 +1462,7 @@ def analyze_code_chaos(
     """
     current_root = _get_index_root()
     path = os.path.relpath(path, current_root) if os.path.isabs(path) else path
-    v = _get_valkey()
+    v = _get_valkey_wm()
     raw = v.raw_r.hget(f"{FILE_HASH_PREFIX}{path}", "doc")
     if not raw:
         return "❌ File not indexed."
@@ -1301,7 +1508,7 @@ def batch_chaos_scan(
 
     Returns files ranked by chaos score (highest risk first).
     """
-    v = _get_valkey()
+    v = _get_valkey_wm()
     if not v.ping():
         return "❌ Valkey not reachable."
 
@@ -1378,7 +1585,7 @@ def predict_structural_ejection(
     """
     current_root = _get_index_root()
     path = os.path.relpath(path, current_root) if os.path.isabs(path) else path
-    v = _get_valkey()
+    v = _get_valkey_wm()
     chaos_data = v.raw_r.hget(f"{FILE_HASH_PREFIX}{path}", "chaos")
     if not chaos_data:
         return f"❌ No chaos profile for {path}. Run analyze_code_chaos first."
@@ -1431,7 +1638,7 @@ def visualize_manifold_trajectory(
     current_root = _get_index_root()
     path = os.path.relpath(path, current_root) if os.path.isabs(path) else path
 
-    v = _get_valkey()
+    v = _get_valkey_wm()
     if not v.ping():
         return "❌ Valkey not reachable."
 
@@ -1677,7 +1884,7 @@ def cluster_codebase_structure(
     directly to the physical clusters seen in the `visualize_manifold_trajectory`
     heatmap dashboard.
     """
-    v = _get_valkey()
+    v = _get_valkey_wm()
     if not v.ping():
         return "❌ Valkey not reachable."
 
@@ -1869,8 +2076,7 @@ Dependency Tree (2 levels):
 Imports:
   {', '.join(sorted(dep_info.imports)[:10]) if dep_info.imports else 'None'}
   {f'... and {len(dep_info.imports) - 10} more' if len(dep_info.imports) > 10 else ''}
-
-Imported By:
+  Imported by:
   {', '.join(sorted(dep_info.imported_by)[:10]) if dep_info.imported_by else 'None'}
   {f'... and {len(dep_info.imported_by) - 10} more' if len(dep_info.imported_by) > 10 else ''}
 """
@@ -1893,7 +2099,7 @@ def compute_combined_risk(
     path = os.path.relpath(path, current_root) if os.path.isabs(path) else path
 
     # Get chaos score
-    v = _get_valkey()
+    v = _get_valkey_wm()
     raw_chaos = v.raw_r.hget(f"{FILE_HASH_PREFIX}{path}", "chaos")
     if not raw_chaos:
         return f"❌ No chaos data for '{path}'. Run ingest_repo first."
@@ -1957,7 +2163,7 @@ def scan_critical_files(
 
     This identifies the most dangerous files in the codebase.
     """
-    v = _get_valkey()
+    v = _get_valkey_wm()
     if not v.ping():
         return "❌ Valkey not reachable."
 
@@ -2043,7 +2249,7 @@ def _get_blast_radius_interpretation(blast_radius: int) -> str:
         )
     elif blast_radius >= 5:
         return (
-            f"MODERATE IMPACT ({blast_radius} files). Localized but not isolated.\n"
+            f"MODERATE IMPACT ({blast_radius} files). Relatively localized but not isolated.\n"
             "  Changes will affect several files.\n"
             "  Standard testing procedures apply."
         )

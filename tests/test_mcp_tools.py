@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SEP MCP Server – Comprehensive Tool Validation Suite.
 
-Tests every tool exposed by mcp_server.py (20 tools total), verifying:
+Tests every tool exposed by mcp_server.py (21 tools total), verifying:
   - Correct output structure and content markers
   - Edge cases and failure modes
   - Metrics properties (chaos ∈ [0,1], coherence ∈ [0,1], etc.)
@@ -11,7 +11,8 @@ Tests every tool exposed by mcp_server.py (20 tools total), verifying:
 Tool inventory (must match @mcp.tool() decorators in mcp_server.py):
   Indexing & Monitoring:  ingest_repo, get_index_stats, start_watcher
   Search & Retrieval:     search_code, get_file, list_indexed_files,
-                          get_file_signature, search_by_structure
+                          get_file_signature, search_by_structure,
+                          search_by_signature_sequence
   Structural Analysis:    compute_signature, verify_snippet
   Chaos Detection:        analyze_code_chaos, batch_chaos_scan,
                           predict_structural_ejection,
@@ -55,6 +56,7 @@ from mcp_server import (
     predict_structural_ejection,
     remove_fact,
     scan_critical_files,
+    search_by_signature_sequence,
     search_by_structure,
     search_code,
     start_watcher,
@@ -65,7 +67,7 @@ from mcp_server import (
 # ---------------------------------------------------------------------------
 # Shared constants & test data
 # ---------------------------------------------------------------------------
-TOOL_COUNT = 20  # Must match the number of @mcp.tool() decorators
+TOOL_COUNT = 21  # Must match the number of @mcp.tool() decorators
 
 # A realistic Python snippet ≥512 bytes for signature/verification tests
 SAMPLE_CODE = (
@@ -221,7 +223,7 @@ class TestIndexingAndMonitoring:
 
 
 class TestSearchAndRetrieval:
-    """Validate file search, retrieval, and structural lookup tools."""
+    """Validate search and retrieval tools."""
 
     def test_list_indexed_files_python(self):
         """List *.py files returns at least one result."""
@@ -301,6 +303,36 @@ class TestSearchAndRetrieval:
         """Invalid signature format returns clear error."""
         result = search_by_structure(signature="invalid_format")
         assert "❌" in result
+
+    def test_search_by_signature_sequence_too_short(self):
+        """Sequence search on short snippet returns clear error."""
+        result = search_by_signature_sequence(text="short text")
+        assert "❌" in result and "512" in result
+
+    def test_search_by_signature_sequence_matches_self(self):
+        """Sequence search should match the source file when using its own text."""
+        source_path = REPO_ROOT / "mcp_server.py"
+        raw_text = source_path.read_text("utf-8")[:2048]
+        if len(raw_text.encode("utf-8")) < 512:
+            pytest.skip("Source text too short for signature sequence search")
+        result = search_by_signature_sequence(text=raw_text, min_signatures=3)
+        assert "mcp_server.py" in result or "Signature sequence matches" in result
+
+    def test_search_by_signature_sequence_empty_after_trim(self):
+        """Trimmed sequence that becomes empty returns clear error."""
+        source_path = REPO_ROOT / "mcp_server.py"
+        raw_text = source_path.read_text("utf-8")[:512]
+        if len(raw_text.encode("utf-8")) < 512:
+            pytest.skip("Source text too short for signature sequence search")
+        result = search_by_signature_sequence(
+            text=raw_text,
+            min_signatures=2,
+            trim_first_last=True,
+        )
+        assert "❌" in result and (
+            "empty" in result.lower() or "not enough signatures" in result.lower()
+        )
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -615,6 +647,7 @@ class TestToolInventory:
             predict_structural_ejection,
             remove_fact,
             scan_critical_files,
+            search_by_signature_sequence,
             search_by_structure,
             search_code,
             start_watcher,
@@ -644,6 +677,7 @@ class TestToolInventory:
             predict_structural_ejection,
             remove_fact,
             scan_critical_files,
+            search_by_signature_sequence,
             search_by_structure,
             search_code,
             start_watcher,

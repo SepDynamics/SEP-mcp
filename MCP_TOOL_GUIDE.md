@@ -275,6 +275,30 @@ Matching pattern: '*.py'
 
 ---
 
+#### `search_by_signature_sequence`
+
+Find files containing a contiguous signature sequence derived from a snippet.
+
+| Parameter | Default | Description |
+|---|---|---|
+| `text` | *(required)* | Raw text snippet to encode into signatures (≥512 bytes) |
+| `min_signatures` | `3` | Minimum number of signatures required |
+| `trim_first_last` | `true` | Trim first/last signatures before searching |
+| `max_results` | `20` | Maximum matching documents to return |
+| `scope` | `"*"` | Glob pattern to limit search |
+
+```
+search_by_signature_sequence  (text="...", min_signatures=3, trim_first_last=true, scope="src/*")
+```
+
+```
+🔎 Signature sequence matches (len=5) (trimmed):
+  src/manifold/sidecar.py | windows 12→16 bytes 4608→6400
+  mcp_server.py | windows 88→92 bytes 33792→35840
+```
+
+---
+
 ## 3. Chaos Analysis
 
 ### `analyze_code_chaos`

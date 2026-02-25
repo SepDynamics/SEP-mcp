@@ -20,6 +20,7 @@ get_file              path="src/manifold/sidecar.py"
 search_code           query="chaos_score"  file_pattern="*.py"  case_sensitive=false
 get_file_signature    path="mcp_server.py"
 search_by_structure   signature="c0.213_s0.000_e0.928"  tolerance=0.05
+search_by_signature_sequence  text="..."  min_signatures=3  trim_first_last=true  scope="src/*"
 ```
 
 ## Chaos Analysis

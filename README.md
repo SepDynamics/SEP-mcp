@@ -92,6 +92,7 @@ All tools are documented with parameters, examples, and workflows in **[MCP_TOOL
 | `search_code` | Keyword or regex search across all indexed files with context |
 | `get_file_signature` | Structural fingerprint (coherence/stability/entropy) for a file |
 | `search_by_structure` | Find files with similar structural signatures |
+| `search_by_signature_sequence` | Find files containing a contiguous signature sequence derived from a snippet (≥512 bytes) |
 
 ### Chaos Analysis
 | Tool | Purpose |
